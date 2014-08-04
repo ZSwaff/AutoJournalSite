@@ -126,10 +126,11 @@
     	var MONTH_REF_NO_NUMS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 					
 
-			var STANFORD_LOCATION = new google.maps.LatLng(39.0122997, -94.7155527); //37.424188, -122.166349);
+			var STANFORD_LOCATION = new google.maps.LatLng(37.424188, -122.166349);
 			var MIN_WIDTH = 1280; var MIN_HEIGHT = 800;
 			var MAX_BUCKETS = 330; // divisor of 1320 = 2 x 2 x 2 x 3 x 5 x 11
-			
+			var MAX_CIRCLES_DISPLAYABLE = 2000; 
+
 			var windowWidth = window.innerWidth;
 			var windowHeight = window.innerHeight;
 			var bottomBarWidth;
@@ -137,6 +138,7 @@
 			var map;
 
 			var allLogsByDay = [];
+			var totalNumLogs = 0;
 
 			var searchCircle = null;
 			var isDefiningCustomRegion = false;
@@ -283,11 +285,11 @@
 			}
 			function convertAllFilesContentsToLogArrays(allFileContents){
 				var allLogs = [];
-				var numLogs = 0;
+				totalNumLogs = 0;
 				
 				for(var day = 0; day < allFileContents.length; day++){;
 					var dayLogs = [];
-					numLogs += allFileContents[day].length - 2;
+					totalNumLogs += allFileContents[day].length - 2;
 					
 					for(var log = 2; log < allFileContents[day].length; log++){
 						var halves = allFileContents[day][log].split(" :: ");
@@ -304,7 +306,6 @@
 					allLogs.push(dayData);
 				}
 				
-				setStatisticsDisplay(allLogs.length, numLogs);
 				return allLogs;
 			}
 			
@@ -518,8 +519,19 @@
 				}
 				circlesToDraw = [];
 				
-				for(var day = 0; day < 1 /*allLogsByDay.length*/; day++){
+				var fraction = Math.floor(totalNumLogs/MAX_CIRCLES_DISPLAYABLE) + 1;
+
+				var counter = -1;
+				for(var day = 0; day < allLogsByDay.length; day++){
 					for(var log = 0; log < allLogsByDay[day].logs.length; log++){
+						counter++;
+						if(counter % fraction != 0) continue;
+
+						//TODO this is very dumb, and unfinished
+						var time = allLogsByDay[day].date.getTime();
+						var decimal = time / Math.pow(10, ((time + "").length));
+						var currRadius = Math.floor(displayCircleRadius) + decimal;
+
 						var circleOptions = {
 							strokeColor: "#FF0000",
 							strokeOpacity: 0,
@@ -528,12 +540,25 @@
 							fillOpacity: displayCircleOpacity,
 							map: map,
 							center: allLogsByDay[day].logs[log].location,
-							radius:	displayCircleRadius,
+							radius:	currRadius,
 							geodesic: true
 						};
-						circlesToDraw.push(new google.maps.Circle(circleOptions));
+
+						var currCircle = new google.maps.Circle(circleOptions);
+
+						google.maps.event.addListener(currCircle, "click", function(event) {
+							//TODO find a way to fix this
+							var currTime = "";
+							//var currDate = (new Date()).setTime(currTime);
+							var info = "This log is from " + currCircle.getRadius();
+							setCircleDrawTime(info);
+						});
+
+						circlesToDraw.push(currCircle);
 					}
 				}
+
+				setStatisticsDisplay2(allLogsByDay.length, circlesToDraw.length, fraction);
 			}
 
 
@@ -618,6 +643,8 @@
 						}
 					}
 				}
+
+				setStatisticsDisplay(buckets.length, totalNumLogs);
 			}
 			function drawBucket(context, bucket, height, totNumBuckets, totLength){ //(totLength / totNumBuckets) should be an integer. totLength is like 1320, not 1340 - no padding
 				context.fillRect(42 + (totLength / totNumBuckets) * bucket, 175 - height, (totLength / totNumBuckets), height);
@@ -640,7 +667,13 @@
 					document.getElementById("searchCoordinates").value = locationToString(center);
 			}
 			function setStatisticsDisplay(numDays, numLogs){
-				document.getElementById("currentStats").innerHTML = "Displaying " + numLogs + " logs from " + numDays + " days";
+				document.getElementById("currentStats").innerHTML = "There are a total of " + numLogs + " logs from " + numDays + " days";
+			}
+			function setStatisticsDisplay2(numDays, numLogs, fraction){ 
+				if(fraction <= 1)
+					document.getElementById("currentStats2").innerHTML = "Displaying " + numLogs + " logs from " + numDays + " days";
+				else
+					document.getElementById("currentStats2").innerHTML = "Displaying " + numLogs + " (1/" + fraction + ") logs from " + numDays + " days";
 			}
 			function setCircleDrawTime(time){
 				//document.getElementById("currentTimeTaken").innerHTML = "It took " + time + " ms to draw the circles";
@@ -748,6 +781,7 @@
 				<div>
 					<br><br><br>
 					<p id="currentStats"><p>
+					<p id="currentStats2"><p>
 					<p id="currentTimeTaken"><p>
 				</div>
 			</form>
