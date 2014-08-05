@@ -150,6 +150,7 @@
 			var searchStartDate = null;
 			var searchEndDate = null;
 
+			var fraction = 1;
 			var circlesToDraw = [];
 			var displayCircleRadius = 100;
 			var displayCircleOpacity = .1; 
@@ -230,7 +231,10 @@
 						updateSearchCircle(event.latLng);
 					else
 						updatePolyline(event.latLng);
+				});
 
+				google.maps.event.addListener(map, "mousemove", function(event) {
+					refreshCircleMouseoverDisplay(event.latLng);
 				});
 
 				allLogsByDay = convertAllFilesContentsToLogArrays(loadAllTextFiles());
@@ -241,6 +245,9 @@
 			}
 			function initializeSidebar(){
 				resetTime();
+				document.getElementById("sidebar").addEventListener('mousemove', function(event) {
+	        setStatisticsDisplay3("");
+      	}, false);
 			}
 			function initializeBottomBar(){
 				var bottomBarWidth = (/*windowWidth*/ 1680 - 270);
@@ -249,8 +256,8 @@
 				var graphCanvas = document.getElementById("bottomCanvas");
 				graphCanvas.width = bottomBarWidth - 5;
 
-				graphCanvas.addEventListener('mousemove', function(evt) {
-	        var mousePos = getMousePos(graphCanvas, evt);
+				graphCanvas.addEventListener('mousemove', function(event) {
+	        var mousePos = getMousePos(graphCanvas, event);
 	        updateGraphToShowInfo(graphCanvas, mousePos);
       	}, false);
 			}
@@ -519,18 +526,13 @@
 				}
 				circlesToDraw = [];
 				
-				var fraction = Math.floor(totalNumLogs/MAX_CIRCLES_DISPLAYABLE) + 1;
+				fraction = Math.floor(totalNumLogs/MAX_CIRCLES_DISPLAYABLE) + 1;
 
 				var counter = -1;
 				for(var day = 0; day < allLogsByDay.length; day++){
 					for(var log = 0; log < allLogsByDay[day].logs.length; log++){
 						counter++;
 						if(counter % fraction != 0) continue;
-
-						//TODO this is very dumb, and unfinished
-						var time = allLogsByDay[day].date.getTime();
-						var decimal = time / Math.pow(10, ((time + "").length));
-						var currRadius = Math.floor(displayCircleRadius) + decimal;
 
 						var circleOptions = {
 							strokeColor: "#FF0000",
@@ -540,25 +542,54 @@
 							fillOpacity: displayCircleOpacity,
 							map: map,
 							center: allLogsByDay[day].logs[log].location,
-							radius:	currRadius,
+							radius:	displayCircleRadius,
 							geodesic: true
 						};
 
 						var currCircle = new google.maps.Circle(circleOptions);
 
-						google.maps.event.addListener(currCircle, "click", function(event) {
-							//TODO find a way to fix this
-							var currTime = "";
-							//var currDate = (new Date()).setTime(currTime);
-							var info = "This log is from " + currCircle.getRadius();
-							setCircleDrawTime(info);
+						google.maps.event.addListener(currCircle, "mousemove", function(event) {
+							refreshCircleMouseoverDisplay(event.latLng);
 						});
 
 						circlesToDraw.push(currCircle);
 					}
 				}
 
-				setStatisticsDisplay2(allLogsByDay.length, circlesToDraw.length, fraction);
+				setStatisticsDisplay2(allLogsByDay.length, circlesToDraw.length);
+			}
+			function refreshCircleMouseoverDisplay(mouseLoc){
+				var circlesAround = [];
+				var firstIndex = 0;
+				for(var index = 0; index < circlesToDraw.length; index++)
+				{
+					if(circlesToDraw[index].getBounds().contains(mouseLoc)){
+						circlesAround.push(circlesToDraw[index]);
+						firstIndex = index;
+					}
+				}
+
+				if(circlesAround.length == 0){
+					setStatisticsDisplay3("");
+				}
+				else if(circlesAround.length == 1){
+					firstIndex *= fraction;
+					for (var day = 0; day < allLogsByDay.length; day++) {
+						if(allLogsByDay[day].logs.length <= firstIndex){
+							firstIndex -= allLogsByDay[day].logs.length;
+						}
+						else{
+							var currTime = allLogsByDay[day].logs[firstIndex].time;
+							var currDate = allLogsByDay[day].date;
+							currDate = addTimeStrToDate(currDate, currTime);
+							setStatisticsDisplay3("This log is from " + currDate.toLocaleTimeString() + " on " + currDate.toLocaleDateString());
+							break;
+						}
+					}
+				}
+				else{
+					setStatisticsDisplay3("There are " + circlesAround.length + " logs displaying in this region");
+				}
 			}
 
 
@@ -608,9 +639,9 @@
 					if(buckets[bucketSelected].logIndex == -1) info += "0";
 					else info += allLogsByDay[buckets[bucketSelected].logIndex].logs.length;
 					info += " logs";
-					setCircleDrawTime(info);
+					setStatisticsDisplay3(info);
 				}
-				else setCircleDrawTime("");
+				else setStatisticsDisplay3("");
 			}
 			function updateBuckets(){
 				buckets = [];
@@ -669,21 +700,27 @@
 			function setStatisticsDisplay(numDays, numLogs){
 				document.getElementById("currentStats").innerHTML = "There are a total of " + numLogs + " logs from " + numDays + " days";
 			}
-			function setStatisticsDisplay2(numDays, numLogs, fraction){ 
+			function setStatisticsDisplay2(numDays, numLogs){ 
 				if(fraction <= 1)
 					document.getElementById("currentStats2").innerHTML = "Displaying " + numLogs + " logs from " + numDays + " days";
 				else
 					document.getElementById("currentStats2").innerHTML = "Displaying " + numLogs + " (1/" + fraction + ") logs from " + numDays + " days";
 			}
-			function setCircleDrawTime(time){
-				//document.getElementById("currentTimeTaken").innerHTML = "It took " + time + " ms to draw the circles";
-				document.getElementById("currentTimeTaken").innerHTML = time + "";
+			function setStatisticsDisplay3(time){
+				document.getElementById("currentStats3").innerHTML = time + "";
 			}
 			
 
 			//constructors
 			function makeCleanDate(year, month, day){
 				return new Date(year, month, day, 0, 0, 0, 0);
+			}
+			function addTimeStrToDate(existingDate, timeStr){
+				var segments = timeStr.trim().split(":");
+				existingDate.setHours(parseInt(segments[0]));
+				existingDate.setMinutes(parseInt(segments[1]));
+				existingDate.setSeconds(parseInt(segments[2]));
+				return existingDate;
 			}
 
 
@@ -782,7 +819,7 @@
 					<br><br><br>
 					<p id="currentStats"><p>
 					<p id="currentStats2"><p>
-					<p id="currentTimeTaken"><p>
+					<p id="currentStats3"><p>
 				</div>
 			</form>
 		</div>
