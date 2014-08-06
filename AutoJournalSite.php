@@ -216,7 +216,6 @@
 					var places = searchBox.getPlaces();
 					if (places.length == 0) return;
 					map.panTo(places[0].geometry.location);
-					updateSearchCircle(places[0].geometry.location);
 				});
 
 				//bias the search results towards places nearby
@@ -227,8 +226,11 @@
 				
 				//add a listener for map clicks to make the search circle
 				google.maps.event.addListener(map, "click", function(event) {
-					if(!isDefiningCustomRegion)
+					if(!isDefiningCustomRegion){
 						updateSearchCircle(event.latLng);
+						refreshCircleList();
+						updateBuckets();
+					}
 					else
 						updatePolyline(event.latLng);
 				});
@@ -240,7 +242,7 @@
 				allLogsByDay = convertAllFilesContentsToLogArrays(loadAllTextFiles());
 				updateBuckets();
 
-				drawLocations();
+				refreshCircleList();
 				drawGraph(-1);
 			}
 			function initializeSidebar(){
@@ -330,6 +332,33 @@
 
 				document.getElementById("endDate").value = searchEndDate.getFullYear() + "-" + ("00" + (searchEndDate.getMonth() + 1)).slice(-2)  + "-" + ("00" + searchEndDate.getDate()).slice(-2);
 				document.getElementById("endTime").value = ("00" + searchEndDate.getHours()).slice(-2) + ":" + ("00" + searchEndDate.getMinutes()).slice(-2);
+
+				refreshCircleList();
+				updateBuckets();
+			}
+			function changeStartDate(){
+				var startDate = document.getElementById("startDate").value;
+				var startTime = document.getElementById("startTime").value;
+
+				var dateValues = startDate.split("-");
+				var timeValues = startTime.split(":");
+				
+				searchStartDate = new Date(parseInt(dateValues[0]), parseInt(dateValues[1]), parseInt(dateValues[2]), parseInt(timeValues[0]), parseInt(timeValues[1]), parseInt(timeValues[2]), 0);
+
+				refreshCircleList();
+				updateBuckets();
+			}
+			function changeEndDate(){
+				var endDate = document.getElementById("endDate").value;
+				var endTime = document.getElementById("endTime").value;
+
+				var dateValues = endDate.split("-");
+				var timeValues = endTime.split(":");
+				
+				searchEndDate = new Date(parseInt(dateValues[0]), parseInt(dateValues[1]), parseInt(dateValues[2]), parseInt(timeValues[0]), parseInt(timeValues[1]), parseInt(timeValues[2]), 0);
+
+				refreshCircleList();
+				updateBuckets();
 			}
 
 			//location
@@ -359,13 +388,20 @@
 				
 				google.maps.event.addListener(searchCircle, "radius_changed", function() {
 					setRadiusInTextBox(searchCircle.getRadius());
+					refreshCircleList();
+					updateBuckets();
 				});
 				google.maps.event.addListener(searchCircle, "center_changed", function() {
 					setCoordinatesInTextBox(searchCircle.getCenter());
+					refreshCircleList();
+					updateBuckets();
 				});
 			}
 			function updateSearchCircleBasedOnCustomRegion(){
 				//TODO update fields in sidebar based on center, and radius with the distance to the farthest point
+
+				refreshCircleList();
+				updateBuckets();
 			}
 			function updatePolyline(clickLoc){
 				var path = searchPolyline.getPath();
@@ -466,6 +502,9 @@
 					searchCustomRegions[i].setMap(null);
 				}
 				searchCustomRegions = [];
+
+				refreshCircleList();
+				updateBuckets();
 			}
 			function validateRadius(){
 				var radius = document.getElementById("searchRadius").value;
@@ -479,6 +518,9 @@
 					if(searchCircle == null)
 						updateSearchCircle(map.getCenter());
 					searchCircle.setRadius(numRadius);
+
+					refreshCircleList();
+					updateBuckets();
 				}
 			}
 			function validateCoordinates(){
@@ -498,7 +540,12 @@
 				}
 				
 				if(searchCircle == null) setCoordinatesInTextBox(null);
-				else setCoordinatesInTextBox(searchCircle.getCenter());
+				else {
+					setCoordinatesInTextBox(searchCircle.getCenter());
+
+					refreshCircleList();
+					updateBuckets();
+				}
 			}
 			function toggleDefineCustomRegion(){
 				resetLocation();
@@ -507,56 +554,94 @@
 
 			//settings
 			function changeDisplayRadius(){
-				displayCircleRadius = parseInt(document.getElementById("displayRadius").value);
-				drawLocations();
+				var temp = parseInt(document.getElementById("displayRadius").value);
+				if(isNaN(temp)){
+					document.getElementById("displayRadius").value = "";
+				}
+				else{
+					displayCircleRadius = temp;
+					for(var i = 0; i < circlesToDraw.length; i++)
+						circlesToDraw[i].setRadius(displayCircleRadius);
+				}
 			}
 			function changeDisplayOpacity(){
-				displayCircleOpacity = parseFloat(document.getElementById("displayOpacity").value);
-				drawLocations();
+				var temp =  parseFloat(document.getElementById("displayOpacity").value);
+				if(isNaN(temp)){
+					document.getElementById("displayOpacity").value = "";
+				}
+				else{
+					displayCircleOpacity = temp;
+					refreshCircleList();
+				}
 			}	
 			function toggleConnections(){
 				//TODO draw lines between the regions that are far away from each other
 			}
 
 
-			//draw logs etc. on map
-			function drawLocations(){
+			//get logs ready as circles to draw
+			function refreshCircleList(){
 				for(var i = 0; i < circlesToDraw.length; i++){
 					circlesToDraw[i].setMap(null);
 				}
 				circlesToDraw = [];
 				
-				fraction = Math.floor(totalNumLogs/MAX_CIRCLES_DISPLAYABLE) + 1;
+				var distinctDays = 0;
+				var locationsWithinRegion = [];
 
-				var counter = -1;
+				var bounds = null;
+				if(searchCircle != null) bounds = searchCircle.getBounds();
+				if(searchCustomRegions.length != 0) bounds = searchCustomRegions[0].getBounds(); //TODO dependent on whether we're keeping this an array...?
+
+				var startTime = searchStartDate.getTime();
+				var endTime = searchEndDate.getTime();
+
 				for(var day = 0; day < allLogsByDay.length; day++){
+					var thisDaysTime = allLogsByDay[day].date.getTime();
+					if(thisDaysTime + 60*60*1000 < startTime) continue;
+					if(thisDaysTime - 60*60*1000 > endTime) break;
+					
+					//TODO check travel circle for the day here
+					var logToday = false;
 					for(var log = 0; log < allLogsByDay[day].logs.length; log++){
-						counter++;
-						if(counter % fraction != 0) continue;
-
-						var circleOptions = {
-							strokeColor: "#FF0000",
-							strokeOpacity: 0,
-							strokeWeight: 1,
-							fillColor: "#FF0000",
-							fillOpacity: displayCircleOpacity,
-							map: map,
-							center: allLogsByDay[day].logs[log].location,
-							radius:	displayCircleRadius,
-							geodesic: true
-						};
-
-						var currCircle = new google.maps.Circle(circleOptions);
-
-						google.maps.event.addListener(currCircle, "mousemove", function(event) {
-							refreshCircleMouseoverDisplay(event.latLng);
-						});
-
-						circlesToDraw.push(currCircle);
+						var nextLoc = allLogsByDay[day].logs[log].location;
+						if((searchCircle == null && searchCustomRegions.length == 0) || bounds.contains(nextLoc)){
+							locationsWithinRegion.push(nextLoc);
+							logToday = true;
+						}
 					}
+					if(logToday) distinctDays++;
 				}
 
-				setStatisticsDisplay2(allLogsByDay.length, circlesToDraw.length);
+				fraction = Math.floor(locationsWithinRegion.length/MAX_CIRCLES_DISPLAYABLE) + 1;
+
+				var counter = -1;
+				for(var i = 0; i < locationsWithinRegion.length; i++){
+					counter++;
+					if(counter % fraction != 0) continue;
+
+					var circleOptions = {
+						strokeColor: "#FF0000",
+						strokeOpacity: 0,
+						strokeWeight: 1,
+						fillColor: "#FF0000",
+						fillOpacity: displayCircleOpacity,
+						map: map,
+						center: locationsWithinRegion[i],
+						radius:	displayCircleRadius,
+						geodesic: true
+					};
+
+					var currCircle = new google.maps.Circle(circleOptions);
+
+					google.maps.event.addListener(currCircle, "mousemove", function(event) {
+						refreshCircleMouseoverDisplay(event.latLng);
+					});
+
+					circlesToDraw.push(currCircle);
+				}
+
+				setStatisticsDisplay2(distinctDays, circlesToDraw.length);
 			}
 			function refreshCircleMouseoverDisplay(mouseLoc){
 				var circlesAround = [];
@@ -786,10 +871,10 @@
 							</th>
 						</tr>
 					</table>
-					<input type="date" id="startDate" class="controls" required="required"> 
-					<input type="time" id="startTime" class="controls" required="required">
-					<input type="date" id="endDate" class="controls" required="required"> 
-					<input type="time" id="endTime" class="controls" required="required">
+					<input type="date" id="startDate" class="controls" onchange="changeStartDate()" required="required"> 
+					<input type="time" id="startTime" class="controls" onchange="changeStartDate()" required="required">
+					<input type="date" id="endDate" class="controls" onchange="changeEndDate()" required="required"> 
+					<input type="time" id="endTime" class="controls" onchange="changeEndDate()" required="required">
 				</div>
 				<div>
 					<br>
