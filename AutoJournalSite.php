@@ -123,9 +123,11 @@
       src="https://maps.googleapis.com/maps/api/js?v=3.exp&libraries=places"> //"https://maps.googleapis.com/maps/api/js?key=AIzaSyDuzuNuG6mRj6N9f3GJWMg7EP3ZKHAdfFA">
     </script>
     <script>
+    	//look for TODO and POTENTIAL tags
+
+
     	var MONTH_REF_NO_NUMS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 					
-
 			var STANFORD_LOCATION = new google.maps.LatLng(37.424188, -122.166349);
 			var MIN_WIDTH = 1280; var MIN_HEIGHT = 800;
 			var MAX_BUCKETS = 330; // divisor of 1320 = 2 x 2 x 2 x 3 x 5 x 11
@@ -343,10 +345,11 @@
 				var dateValues = startDate.split("-");
 				var timeValues = startTime.split(":");
 				
-				searchStartDate = new Date(parseInt(dateValues[0]), parseInt(dateValues[1]), parseInt(dateValues[2]), parseInt(timeValues[0]), parseInt(timeValues[1]), parseInt(timeValues[2]), 0);
+				searchStartDate = new Date(parseInt(dateValues[0]), parseInt(dateValues[1])-1, parseInt(dateValues[2]), parseInt(timeValues[0]), parseInt(timeValues[1]), 0, 0);
 
 				refreshCircleList();
 				updateBuckets();
+				drawGraph(-1);
 			}
 			function changeEndDate(){
 				var endDate = document.getElementById("endDate").value;
@@ -355,7 +358,7 @@
 				var dateValues = endDate.split("-");
 				var timeValues = endTime.split(":");
 				
-				searchEndDate = new Date(parseInt(dateValues[0]), parseInt(dateValues[1]), parseInt(dateValues[2]), parseInt(timeValues[0]), parseInt(timeValues[1]), parseInt(timeValues[2]), 0);
+				searchEndDate = new Date(parseInt(dateValues[0]), parseInt(dateValues[1])-1, parseInt(dateValues[2]), parseInt(timeValues[0]), parseInt(timeValues[1]), 0, 0);
 
 				refreshCircleList();
 				updateBuckets();
@@ -596,6 +599,7 @@
 				var startTime = searchStartDate.getTime();
 				var endTime = searchEndDate.getTime();
 
+				//TODO fix this time in detail beyond the raw day
 				for(var day = 0; day < allLogsByDay.length; day++){
 					var thisDaysTime = allLogsByDay[day].date.getTime();
 					if(thisDaysTime + 60*60*1000 < startTime) continue;
@@ -701,12 +705,15 @@
 				if(bucketSelected == -1) context.fillStyle = "#444444";
 				else context.fillStyle = "#666666";
 
+				//TODO no it's not vvv
+				alert("graph drawing: totBuckets = " + totNumBuckets);
+
 				for(var i = 0; i < totNumBuckets; i++){
 					if(bucketSelected == i) context.fillStyle = "#222222";
 					var currNumLogs = 0;
 					if(buckets[i].logIndex != -1) currNumLogs = allLogsByDay[buckets[i].logIndex].logs.length;
 					drawBucket(context, i, (currNumLogs / maxNumLogs) * maxHeight, totNumBuckets, totLength);
-					if(bucketSelected == i) context.fillStyle = "#666666"; //in theory could draw red box here to show bucket when number is 0
+					if(bucketSelected == i) context.fillStyle = "#666666"; //POTENTIAL could draw red box here to show bucket when number is 0
 				}
 			}
 			function updateGraphToShowInfo(graphCanvas, mousePos){
@@ -783,13 +790,13 @@
 					document.getElementById("searchCoordinates").value = locationToString(center);
 			}
 			function setStatisticsDisplay(numDays, numLogs){
-				document.getElementById("currentStats").innerHTML = "There are a total of " + numLogs + " logs from " + numDays + " days";
+				document.getElementById("currentStats").innerHTML = "There are a total of " + numLogs + " logs over a range of " + numDays + " days";
 			}
 			function setStatisticsDisplay2(numDays, numLogs){ 
 				if(fraction <= 1)
-					document.getElementById("currentStats2").innerHTML = "Displaying " + numLogs + " logs from " + numDays + " days";
+					document.getElementById("currentStats2").innerHTML = "Displaying " + numLogs + " logs from " + numDays + " particular days";
 				else
-					document.getElementById("currentStats2").innerHTML = "Displaying " + numLogs + " (1/" + fraction + ") logs from " + numDays + " days";
+					document.getElementById("currentStats2").innerHTML = "Displaying " + numLogs + " (1/" + fraction + ") logs from " + numDays + " particular days";
 			}
 			function setStatisticsDisplay3(time){
 				document.getElementById("currentStats3").innerHTML = time + "";
