@@ -125,6 +125,10 @@
     <script>
     	//look for TODO and POTENTIAL tags
 
+    	//ok, the bottom display is jacked. the numbers and ranges aren't really what I want
+    	//next, when finding the circles there really needs to be some info kept about which we're displaying for the graph to read. the graph doesn't update based on location search yet
+    	//furthermore, the circle mouseover just started being the start date all the time when search is enabled because of fraction. should be fixed by the above
+    	//then work with the specific times of day in both location and time search
 
     	var MONTH_REF_NO_NUMS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 					
@@ -157,6 +161,8 @@
 			var displayCircleRadius = 100;
 			var displayCircleOpacity = .1; 
 
+			var selectedLogsByDay = [];
+			var numLogsDisplayingNow = 0;
 			var buckets = [];
 			
 
@@ -230,8 +236,7 @@
 				google.maps.event.addListener(map, "click", function(event) {
 					if(!isDefiningCustomRegion){
 						updateSearchCircle(event.latLng);
-						refreshCircleList();
-						updateBuckets();
+						searchRefresh();
 					}
 					else
 						updatePolyline(event.latLng);
@@ -242,10 +247,9 @@
 				});
 
 				allLogsByDay = convertAllFilesContentsToLogArrays(loadAllTextFiles());
-				updateBuckets();
-
-				refreshCircleList();
-				drawGraph(-1);
+				selectedLogsByDay = allLogsByDay;
+				
+				searchRefresh();
 			}
 			function initializeSidebar(){
 				resetTime();
@@ -262,7 +266,7 @@
 
 				graphCanvas.addEventListener('mousemove', function(event) {
 	        var mousePos = getMousePos(graphCanvas, event);
-	        updateGraphToShowInfo(graphCanvas, mousePos);
+	        drawGraphMouseoverDisplay(graphCanvas, mousePos);
       	}, false);
 			}
 			
@@ -335,8 +339,7 @@
 				document.getElementById("endDate").value = searchEndDate.getFullYear() + "-" + ("00" + (searchEndDate.getMonth() + 1)).slice(-2)  + "-" + ("00" + searchEndDate.getDate()).slice(-2);
 				document.getElementById("endTime").value = ("00" + searchEndDate.getHours()).slice(-2) + ":" + ("00" + searchEndDate.getMinutes()).slice(-2);
 
-				refreshCircleList();
-				updateBuckets();
+				searchRefresh();
 			}
 			function changeStartDate(){
 				var startDate = document.getElementById("startDate").value;
@@ -347,9 +350,7 @@
 				
 				searchStartDate = new Date(parseInt(dateValues[0]), parseInt(dateValues[1])-1, parseInt(dateValues[2]), parseInt(timeValues[0]), parseInt(timeValues[1]), 0, 0);
 
-				refreshCircleList();
-				updateBuckets();
-				drawGraph(-1);
+				searchRefresh();
 			}
 			function changeEndDate(){
 				var endDate = document.getElementById("endDate").value;
@@ -360,8 +361,7 @@
 				
 				searchEndDate = new Date(parseInt(dateValues[0]), parseInt(dateValues[1])-1, parseInt(dateValues[2]), parseInt(timeValues[0]), parseInt(timeValues[1]), 0, 0);
 
-				refreshCircleList();
-				updateBuckets();
+				searchRefresh();
 			}
 
 			//location
@@ -389,22 +389,22 @@
 				setRadiusInTextBox(searchCircle.getRadius());
 				setCoordinatesInTextBox(searchCircle.getCenter());
 				
+				google.maps.event.addListener(searchCircle, "mousemove", function(event) {
+					refreshCircleMouseoverDisplay(event.latLng);
+				});
 				google.maps.event.addListener(searchCircle, "radius_changed", function() {
 					setRadiusInTextBox(searchCircle.getRadius());
-					refreshCircleList();
-					updateBuckets();
+					searchRefresh();
 				});
 				google.maps.event.addListener(searchCircle, "center_changed", function() {
 					setCoordinatesInTextBox(searchCircle.getCenter());
-					refreshCircleList();
-					updateBuckets();
+					searchRefresh();
 				});
 			}
 			function updateSearchCircleBasedOnCustomRegion(){
 				//TODO update fields in sidebar based on center, and radius with the distance to the farthest point
 
-				refreshCircleList();
-				updateBuckets();
+				searchRefresh();
 			}
 			function updatePolyline(clickLoc){
 				var path = searchPolyline.getPath();
@@ -506,10 +506,9 @@
 				}
 				searchCustomRegions = [];
 
-				refreshCircleList();
-				updateBuckets();
+				searchRefresh();
 			}
-			function validateRadius(){
+			function validateAndSetRadius(){
 				var radius = document.getElementById("searchRadius").value;
 				var numRadius = parseInt(radius);
 				
@@ -522,11 +521,10 @@
 						updateSearchCircle(map.getCenter());
 					searchCircle.setRadius(numRadius);
 
-					refreshCircleList();
-					updateBuckets();
+					searchRefresh();
 				}
 			}
-			function validateCoordinates(){
+			function validateAndSetCoordinates(){
 				var center = document.getElementById("searchCoordinates").value.trim();
 				var coords = center.split(" ");
 				
@@ -546,8 +544,7 @@
 				else {
 					setCoordinatesInTextBox(searchCircle.getCenter());
 
-					refreshCircleList();
-					updateBuckets();
+					searchRefresh();
 				}
 			}
 			function toggleDefineCustomRegion(){
@@ -556,7 +553,7 @@
 			}
 
 			//settings
-			function changeDisplayRadius(){
+			function validateAndSetDisplayRadius(){
 				var temp = parseInt(document.getElementById("displayRadius").value);
 				if(isNaN(temp)){
 					document.getElementById("displayRadius").value = "";
@@ -567,23 +564,30 @@
 						circlesToDraw[i].setRadius(displayCircleRadius);
 				}
 			}
-			function changeDisplayOpacity(){
+			function validateAndSetDisplayOpacity(){
 				var temp =  parseFloat(document.getElementById("displayOpacity").value);
 				if(isNaN(temp)){
 					document.getElementById("displayOpacity").value = "";
 				}
 				else{
 					displayCircleOpacity = temp;
-					refreshCircleList();
+					refreshListOfDisplayingLogs();
 				}
 			}	
-			function toggleConnections(){
+			function toggleDrawConnections(){
 				//TODO draw lines between the regions that are far away from each other
 			}
 
 
+			//general refresh
+			function searchRefresh(){
+				refreshListOfDisplayingLogs();
+				refreshGraphBuckets();
+				drawGraph(-1);
+			}
+
 			//get logs ready as circles to draw
-			function refreshCircleList(){
+			function refreshListOfDisplayingLogs(){
 				for(var i = 0; i < circlesToDraw.length; i++){
 					circlesToDraw[i].setMap(null);
 				}
@@ -599,7 +603,7 @@
 				var startTime = searchStartDate.getTime();
 				var endTime = searchEndDate.getTime();
 
-				//TODO fix this time in detail beyond the raw day
+				//TODO fix this time in detail beyond the raw day (i.e. set searchStartDate to beginning of day to make sure, and also remove beginning and ending stuff based on time)
 				for(var day = 0; day < allLogsByDay.length; day++){
 					var thisDaysTime = allLogsByDay[day].date.getTime();
 					if(thisDaysTime + 60*60*1000 < startTime) continue;
@@ -681,64 +685,16 @@
 				}
 			}
 
-
 			//bottom bar graph functions
-			function drawGraph(bucketSelected){
-				//TODO incorporate MAX_BUCKETS
-				var totNumBuckets = buckets.length;
-				var totLength = 1320;
-				var maxHeight = 100;
-
-				var maxNumLogs = 1;
-				for(var i = 0; i < totNumBuckets; i++){
-					var potMax = 0;
-					if(buckets[i].logIndex != -1) {
-						potMax = allLogsByDay[buckets[i].logIndex].logs.length;
-					}
-					if(potMax > maxNumLogs) maxNumLogs = potMax;
-				}
-
-				var canvas = (document.getElementById("bottomCanvas"));
-				var context = canvas.getContext("2d");
-				context.fillRect(32, 175, totLength + 20, 3); //should be 1320 long from (42, 175) to (1362, 175)
-
-				if(bucketSelected == -1) context.fillStyle = "#444444";
-				else context.fillStyle = "#666666";
-
-				//TODO no it's not vvv
-				alert("graph drawing: totBuckets = " + totNumBuckets);
-
-				for(var i = 0; i < totNumBuckets; i++){
-					if(bucketSelected == i) context.fillStyle = "#222222";
-					var currNumLogs = 0;
-					if(buckets[i].logIndex != -1) currNumLogs = allLogsByDay[buckets[i].logIndex].logs.length;
-					drawBucket(context, i, (currNumLogs / maxNumLogs) * maxHeight, totNumBuckets, totLength);
-					if(bucketSelected == i) context.fillStyle = "#666666"; //POTENTIAL could draw red box here to show bucket when number is 0
-				}
-			}
-			function updateGraphToShowInfo(graphCanvas, mousePos){
-				graphCanvas.width = graphCanvas.width;
-
-				var bucketSelected = -1;
-				if(mousePos.x >= 42 && mousePos.x < 1362 && mousePos.y >= 75 && mousePos.y < 175){
-					bucketSelected = Math.floor(((mousePos.x - 42) / 1320) * buckets.length);
-				}
-
-				drawGraph(bucketSelected);
-				if(bucketSelected != -1){
-					//TODO change toDateString()
-					var info = buckets[bucketSelected].date.toDateString() + "\n";
-					if(buckets[bucketSelected].logIndex == -1) info += "0";
-					else info += allLogsByDay[buckets[bucketSelected].logIndex].logs.length;
-					info += " logs";
-					setStatisticsDisplay3(info);
-				}
-				else setStatisticsDisplay3("");
-			}
-			function updateBuckets(){
+			function refreshGraphBuckets(){
 				buckets = [];
 
+				//TODO fix this time in detail beyond the raw day (i.e. set searchStartDate to beginning of day to make sure, and also remove beginning and ending stuff based on time)
 				var allLogsIndex = 0;
+				while(allLogsIndex < allLogsByDay.length && searchStartDate.getTime() > allLogsByDay[allLogsIndex].date.getTime()){
+					allLogsIndex++;
+				}
+
 				for(var year = searchStartDate.getFullYear(); year <= searchEndDate.getFullYear(); year++){
 					for(var month = 0; month < 12; month++){
 						if(year == searchStartDate.getFullYear() && month < searchStartDate.getMonth()) continue;
@@ -767,9 +723,59 @@
 					}
 				}
 
-				setStatisticsDisplay(buckets.length, totalNumLogs);
+				setStatisticsDisplay(allLogsByDay.length, totalNumLogs);
 			}
-			function drawBucket(context, bucket, height, totNumBuckets, totLength){ //(totLength / totNumBuckets) should be an integer. totLength is like 1320, not 1340 - no padding
+			function drawGraph(bucketSelected){
+				//TODO incorporate MAX_BUCKETS
+				var totNumBuckets = buckets.length;
+				var totLength = 1320;
+				var maxHeight = 100;
+
+				var maxNumLogs = 1;
+				for(var i = 0; i < totNumBuckets; i++){
+					var potMax = 0;
+					if(buckets[i].logIndex != -1) {
+						potMax = allLogsByDay[buckets[i].logIndex].logs.length;
+					}
+					if(potMax > maxNumLogs) maxNumLogs = potMax;
+				}
+
+				var canvas = (document.getElementById("bottomCanvas"));
+				canvas.width = canvas.width;
+
+				var context = canvas.getContext("2d");
+				context.fillRect(32, 175, totLength + 20, 3); //should be 1320 long from (42, 175) to (1362, 175)
+
+				if(bucketSelected == -1) context.fillStyle = "#444444";
+				else context.fillStyle = "#666666";
+
+				for(var i = 0; i < totNumBuckets; i++){
+					if(bucketSelected == i) context.fillStyle = "#222222";
+					var currNumLogs = 0;
+					if(buckets[i].logIndex != -1) currNumLogs = allLogsByDay[buckets[i].logIndex].logs.length;
+					drawIndividualBucket(context, i, (currNumLogs / maxNumLogs) * maxHeight, totNumBuckets, totLength);
+					if(bucketSelected == i) context.fillStyle = "#666666"; //POTENTIAL could draw red box here to show bucket when number is 0
+				}
+			}
+			function drawGraphMouseoverDisplay(graphCanvas, mousePos){
+				graphCanvas.width = graphCanvas.width;
+
+				var bucketSelected = -1;
+				if(mousePos.x >= 42 && mousePos.x < 1362 && mousePos.y >= 75 && mousePos.y < 175){
+					bucketSelected = Math.floor(((mousePos.x - 42) / 1320) * buckets.length);
+				}
+
+				drawGraph(bucketSelected);
+				if(bucketSelected != -1){
+					var info = buckets[bucketSelected].date.toDateString() + "  ::  ";
+					if(buckets[bucketSelected].logIndex == -1) info += "0";
+					else info += allLogsByDay[buckets[bucketSelected].logIndex].logs.length;
+					info += " logs";
+					setStatisticsDisplay3(info);
+				}
+				else setStatisticsDisplay3("");
+			}
+			function drawIndividualBucket(context, bucket, height, totNumBuckets, totLength){ //(totLength / totNumBuckets) should be an integer. totLength is like 1320, not 1340 - no padding
 				context.fillRect(42 + (totLength / totNumBuckets) * bucket, 175 - height, (totLength / totNumBuckets), height);
 			}
 
@@ -790,7 +796,7 @@
 					document.getElementById("searchCoordinates").value = locationToString(center);
 			}
 			function setStatisticsDisplay(numDays, numLogs){
-				document.getElementById("currentStats").innerHTML = "There are a total of " + numLogs + " logs over a range of " + numDays + " days";
+				document.getElementById("currentStats").innerHTML = "Loaded a total of " + numLogs + " logs from " + numDays + " days";
 			}
 			function setStatisticsDisplay2(numDays, numLogs){ 
 				if(fraction <= 1)
@@ -896,16 +902,16 @@
 						</tr>
 					</table>
 					<input type="text" id="searchBox" class="controls" placeholder="Search">
-					<input type="text" id="searchCoordinates" class="controls" onchange="validateCoordinates()" placeholder="Coordinates" required="required">
-					<input type="text" id="searchRadius" class="controls" onchange="validateRadius()" placeholder="Radius (ft)" required="required">
+					<input type="text" id="searchCoordinates" class="controls" onchange="validateAndSetCoordinates()" placeholder="Coordinates" required="required">
+					<input type="text" id="searchRadius" class="controls" onchange="validateAndSetRadius()" placeholder="Radius (ft)" required="required">
 					<input type="checkbox" id="connections" onchange="toggleDefineCustomRegion()">Define custom region</input>
 				</div>
 				<div>
 					<br>
 					<h1>Settings</h1>
-					<input type="text" id="displayRadius" class="controls" onchange="changeDisplayRadius()" placeholder="Display Radius (default 100 ft)">
-					<input type="text" id="displayOpacity" class="controls" onchange="changeDisplayOpacity()" placeholder="Display Opacity (default .1)">
-					<input type="checkbox" id="connections" onchange="toggleConnections()">Draw connections</input>
+					<input type="text" id="displayRadius" class="controls" onchange="validateAndSetDisplayRadius()" placeholder="Display Radius (default 100 ft)">
+					<input type="text" id="displayOpacity" class="controls" onchange="validateAndSetDisplayOpacity()" placeholder="Display Opacity (default .1)">
+					<input type="checkbox" id="connections" onchange="toggleDrawConnections()">Draw connections</input>
 				</div>
 				<div>
 					<br><br><br>
