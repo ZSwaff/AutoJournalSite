@@ -125,9 +125,7 @@
     <script>
     	//look for TODO and POTENTIAL tags
 
-    	//ok, the bottom display is jacked. the numbers and ranges aren't really what I want
-    	//next, when finding the circles there really needs to be some info kept about which we're displaying for the graph to read. the graph doesn't update based on location search yet
-    	//furthermore, the circle mouseover just started being the start date all the time when search is enabled because of fraction. should be fixed by the above
+    	//the graph doesn't update based on selectedLogsByDay yet
     	//then work with the specific times of day in both location and time search
 
     	var MONTH_REF_NO_NUMS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
@@ -162,7 +160,7 @@
 			var displayCircleOpacity = .1; 
 
 			var selectedLogsByDay = [];
-			var numLogsDisplayingNow = 0;
+			var numLogsSelected = 0;
 			var buckets = [];
 			
 
@@ -247,7 +245,6 @@
 				});
 
 				allLogsByDay = convertAllFilesContentsToLogArrays(loadAllTextFiles());
-				selectedLogsByDay = allLogsByDay;
 				
 				searchRefresh();
 			}
@@ -593,63 +590,72 @@
 				}
 				circlesToDraw = [];
 				
-				var distinctDays = 0;
-				var locationsWithinRegion = [];
+				selectedLogsByDay = [];
+				numLogsSelected = 0;
 
 				var bounds = null;
 				if(searchCircle != null) bounds = searchCircle.getBounds();
 				if(searchCustomRegions.length != 0) bounds = searchCustomRegions[0].getBounds(); //TODO dependent on whether we're keeping this an array...?
 
-				var startTime = searchStartDate.getTime();
+				var startTime = removeTimeFromDate(searchStartDate); //TODO here's where I'm working
 				var endTime = searchEndDate.getTime();
 
 				//TODO fix this time in detail beyond the raw day (i.e. set searchStartDate to beginning of day to make sure, and also remove beginning and ending stuff based on time)
 				for(var day = 0; day < allLogsByDay.length; day++){
 					var thisDaysTime = allLogsByDay[day].date.getTime();
 					if(thisDaysTime + 60*60*1000 < startTime) continue;
-					if(thisDaysTime - 60*60*1000 > endTime) break;
+					if(thisDaysTime - 1 > endTime) break;
 					
 					//TODO check travel circle for the day here
-					var logToday = false;
+					var dayLogs = [];
 					for(var log = 0; log < allLogsByDay[day].logs.length; log++){
-						var nextLoc = allLogsByDay[day].logs[log].location;
-						if((searchCircle == null && searchCustomRegions.length == 0) || bounds.contains(nextLoc)){
-							locationsWithinRegion.push(nextLoc);
-							logToday = true;
+						var nextLog = allLogsByDay[day].logs[log];
+						if((searchCircle == null && searchCustomRegions.length == 0) || bounds.contains(nextLog.location)){
+							dayLogs.push(nextLog);
+							numLogsSelected++;
 						}
 					}
-					if(logToday) distinctDays++;
+
+					if(dayLogs.length > 0){
+						var dayData = {
+							logs: dayLogs,
+							date: allLogsByDay[day].date
+						};
+						selectedLogsByDay.push(dayData);
+					}
 				}
 
-				fraction = Math.floor(locationsWithinRegion.length/MAX_CIRCLES_DISPLAYABLE) + 1;
+				fraction = Math.floor(numLogsSelected/MAX_CIRCLES_DISPLAYABLE) + 1;
 
 				var counter = -1;
-				for(var i = 0; i < locationsWithinRegion.length; i++){
-					counter++;
-					if(counter % fraction != 0) continue;
+				for(var day = 0; day < selectedLogsByDay.length; day++){
+					for(var log = 0; log < selectedLogsByDay[day].logs.length; log++){
+						counter++;
+						if(counter % fraction != 0) continue;
 
-					var circleOptions = {
-						strokeColor: "#FF0000",
-						strokeOpacity: 0,
-						strokeWeight: 1,
-						fillColor: "#FF0000",
-						fillOpacity: displayCircleOpacity,
-						map: map,
-						center: locationsWithinRegion[i],
-						radius:	displayCircleRadius,
-						geodesic: true
-					};
+						var circleOptions = {
+							strokeColor: "#FF0000",
+							strokeOpacity: 0,
+							strokeWeight: 1,
+							fillColor: "#FF0000",
+							fillOpacity: displayCircleOpacity,
+							map: map,
+							center: selectedLogsByDay[day].logs[log].location,
+							radius:	displayCircleRadius,
+							geodesic: true
+						};
 
-					var currCircle = new google.maps.Circle(circleOptions);
+						var currCircle = new google.maps.Circle(circleOptions);
 
-					google.maps.event.addListener(currCircle, "mousemove", function(event) {
-						refreshCircleMouseoverDisplay(event.latLng);
-					});
+						google.maps.event.addListener(currCircle, "mousemove", function(event) {
+							refreshCircleMouseoverDisplay(event.latLng);
+						});
 
-					circlesToDraw.push(currCircle);
+						circlesToDraw.push(currCircle);
+					}
 				}
 
-				setStatisticsDisplay2(distinctDays, circlesToDraw.length);
+				setStatisticsDisplay2(selectedLogsByDay.length, numLogsSelected, circlesToDraw.length);
 			}
 			function refreshCircleMouseoverDisplay(mouseLoc){
 				var circlesAround = [];
@@ -667,13 +673,13 @@
 				}
 				else if(circlesAround.length == 1){
 					firstIndex *= fraction;
-					for (var day = 0; day < allLogsByDay.length; day++) {
-						if(allLogsByDay[day].logs.length <= firstIndex){
-							firstIndex -= allLogsByDay[day].logs.length;
+					for (var day = 0; day < selectedLogsByDay.length; day++) {
+						if(selectedLogsByDay[day].logs.length <= firstIndex){
+							firstIndex -= selectedLogsByDay[day].logs.length;
 						}
 						else{
-							var currTime = allLogsByDay[day].logs[firstIndex].time;
-							var currDate = allLogsByDay[day].date;
+							var currTime = selectedLogsByDay[day].logs[firstIndex].time;
+							var currDate = selectedLogsByDay[day].date;
 							currDate = addTimeStrToDate(currDate, currTime);
 							setStatisticsDisplay3("This log is from " + currDate.toLocaleTimeString() + " on " + currDate.toLocaleDateString());
 							break;
@@ -798,14 +804,14 @@
 			function setStatisticsDisplay(numDays, numLogs){
 				document.getElementById("currentStats").innerHTML = "Loaded a total of " + numLogs + " logs from " + numDays + " days";
 			}
-			function setStatisticsDisplay2(numDays, numLogs){ 
-				if(fraction <= 1)
-					document.getElementById("currentStats2").innerHTML = "Displaying " + numLogs + " logs from " + numDays + " particular days";
+			function setStatisticsDisplay2(numDays, numLogsSelected, numLogsDisplaying){ 
+				if(numLogsDisplaying == numLogsSelected)
+					document.getElementById("currentStats2").innerHTML = "Displaying " + numLogsDisplaying + " logs from " + numDays + " days";
 				else
-					document.getElementById("currentStats2").innerHTML = "Displaying " + numLogs + " (1/" + fraction + ") logs from " + numDays + " particular days";
+					document.getElementById("currentStats2").innerHTML = "Displaying " + numLogsDisplaying + " of " + numLogsSelected + " logs from " + numDays + " days";
 			}
-			function setStatisticsDisplay3(time){
-				document.getElementById("currentStats3").innerHTML = time + "";
+			function setStatisticsDisplay3(message){
+				document.getElementById("currentStats3").innerHTML = message;
 			}
 			
 
@@ -819,6 +825,10 @@
 				existingDate.setMinutes(parseInt(segments[1]));
 				existingDate.setSeconds(parseInt(segments[2]));
 				return existingDate;
+			}
+			function removeTimeFromDate(existingDate){
+				var newDate = new Date(existingDate.getFullYear(), existingDate.getMonth(), existingDate.getDate(), 0, 0, 0, 0)
+				return newDate;
 			}
 
 
