@@ -125,9 +125,6 @@
     <script>
     	//look for TODO and POTENTIAL tags
 
-    	//the graph doesn't update based on selectedLogsByDay yet
-    	//then work with the specific times of day in both location and time search
-
     	var MONTH_REF_NO_NUMS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 					
 			var STANFORD_LOCATION = new google.maps.LatLng(37.424188, -122.166349);
@@ -245,6 +242,8 @@
 				});
 
 				allLogsByDay = convertAllFilesContentsToLogArrays(loadAllTextFiles());
+
+				setStatisticsDisplay(allLogsByDay.length, totalNumLogs);
 				
 				searchRefresh();
 			}
@@ -597,22 +596,25 @@
 				if(searchCircle != null) bounds = searchCircle.getBounds();
 				if(searchCustomRegions.length != 0) bounds = searchCustomRegions[0].getBounds(); //TODO dependent on whether we're keeping this an array...?
 
-				var startTime = removeTimeFromDate(searchStartDate); //TODO here's where I'm working
+				var startTime = removeTimeFromDate(searchStartDate).getTime();
 				var endTime = searchEndDate.getTime();
+				var isFirstDay = true;
 
-				//TODO fix this time in detail beyond the raw day (i.e. set searchStartDate to beginning of day to make sure, and also remove beginning and ending stuff based on time)
 				for(var day = 0; day < allLogsByDay.length; day++){
 					var thisDaysTime = allLogsByDay[day].date.getTime();
-					if(thisDaysTime + 60*60*1000 < startTime) continue;
-					if(thisDaysTime - 1 > endTime) break;
+					if(thisDaysTime < startTime) continue;
+					if(thisDaysTime > endTime) break;
 					
 					//TODO check travel circle for the day here
 					var dayLogs = [];
 					for(var log = 0; log < allLogsByDay[day].logs.length; log++){
 						var nextLog = allLogsByDay[day].logs[log];
 						if((searchCircle == null && searchCustomRegions.length == 0) || bounds.contains(nextLog.location)){
-							dayLogs.push(nextLog);
-							numLogsSelected++;
+							if(!isFirstDay || getHoursFromTimeStr(nextLog.time) > searchStartDate.getHours() || (getHoursFromTimeStr(nextLog.time) == searchStartDate.getHours() && getMinutesFromTimeStr(nextLog.time) >= searchStartDate.getMinutes())){
+								isFirstDay = false;
+								dayLogs.push(nextLog);
+								numLogsSelected++;
+							}
 						}
 					}
 
@@ -695,18 +697,19 @@
 			function refreshGraphBuckets(){
 				buckets = [];
 
-				//TODO fix this time in detail beyond the raw day (i.e. set searchStartDate to beginning of day to make sure, and also remove beginning and ending stuff based on time)
 				var allLogsIndex = 0;
-				while(allLogsIndex < allLogsByDay.length && searchStartDate.getTime() > allLogsByDay[allLogsIndex].date.getTime()){
+				var loopStartDate = removeTimeFromDate(searchStartDate);
+
+				while(allLogsIndex < selectedLogsByDay.length && loopStartDate.getTime() > selectedLogsByDay[allLogsIndex].date.getTime()){
 					allLogsIndex++;
 				}
 
-				for(var year = searchStartDate.getFullYear(); year <= searchEndDate.getFullYear(); year++){
+				for(var year = loopStartDate.getFullYear(); year <= searchEndDate.getFullYear(); year++){
 					for(var month = 0; month < 12; month++){
-						if(year == searchStartDate.getFullYear() && month < searchStartDate.getMonth()) continue;
+						if(year == loopStartDate.getFullYear() && month < loopStartDate.getMonth()) continue;
 						if(year == searchEndDate.getFullYear() && month > searchEndDate.getMonth()) break;
 						for(var dom = 1; dom < 32; dom++){
-							if(year == searchStartDate.getFullYear() && month == searchStartDate.getMonth() && dom < searchStartDate.getDate()) continue;
+							if(year == loopStartDate.getFullYear() && month == loopStartDate.getMonth() && dom < loopStartDate.getDate()) continue;
 							if(year == searchEndDate.getFullYear() && month == searchEndDate.getMonth() && dom > searchEndDate.getDate()) break;
 
 							var currDate = makeCleanDate(year, month, dom);
@@ -719,7 +722,7 @@
 								logIndex: -1
 							};
 
-							if(allLogsIndex < allLogsByDay.length && areDatesEqual(currDate, allLogsByDay[allLogsIndex].date)){
+							if(allLogsIndex < selectedLogsByDay.length && areDatesEqual(currDate, selectedLogsByDay[allLogsIndex].date)){
 								bucket.logIndex = allLogsIndex;
 								allLogsIndex++;
 							}
@@ -728,8 +731,6 @@
 						}
 					}
 				}
-
-				setStatisticsDisplay(allLogsByDay.length, totalNumLogs);
 			}
 			function drawGraph(bucketSelected){
 				//TODO incorporate MAX_BUCKETS
@@ -741,7 +742,7 @@
 				for(var i = 0; i < totNumBuckets; i++){
 					var potMax = 0;
 					if(buckets[i].logIndex != -1) {
-						potMax = allLogsByDay[buckets[i].logIndex].logs.length;
+						potMax = selectedLogsByDay[buckets[i].logIndex].logs.length;
 					}
 					if(potMax > maxNumLogs) maxNumLogs = potMax;
 				}
@@ -758,7 +759,7 @@
 				for(var i = 0; i < totNumBuckets; i++){
 					if(bucketSelected == i) context.fillStyle = "#222222";
 					var currNumLogs = 0;
-					if(buckets[i].logIndex != -1) currNumLogs = allLogsByDay[buckets[i].logIndex].logs.length;
+					if(buckets[i].logIndex != -1) currNumLogs = selectedLogsByDay[buckets[i].logIndex].logs.length;
 					drawIndividualBucket(context, i, (currNumLogs / maxNumLogs) * maxHeight, totNumBuckets, totLength);
 					if(bucketSelected == i) context.fillStyle = "#666666"; //POTENTIAL could draw red box here to show bucket when number is 0
 				}
@@ -775,7 +776,7 @@
 				if(bucketSelected != -1){
 					var info = buckets[bucketSelected].date.toDateString() + "  ::  ";
 					if(buckets[bucketSelected].logIndex == -1) info += "0";
-					else info += allLogsByDay[buckets[bucketSelected].logIndex].logs.length;
+					else info += selectedLogsByDay[buckets[bucketSelected].logIndex].logs.length;
 					info += " logs";
 					setStatisticsDisplay3(info);
 				}
@@ -813,11 +814,32 @@
 			function setStatisticsDisplay3(message){
 				document.getElementById("currentStats3").innerHTML = message;
 			}
-			
 
-			//constructors
+
+			//comparisons
+			function areDatesEqual(date1, date2){
+				return ((date1.getFullYear() == date2.getFullYear()) && (date1.getMonth() == date2.getMonth()) && (date1.getDate() == date2.getDate()));
+			}
+
+
+			//time conversions
 			function makeCleanDate(year, month, day){
 				return new Date(year, month, day, 0, 0, 0, 0);
+			}
+			function stringToDate(str){
+				var parts = str.split(" ");
+
+				var year = parseInt(parts[3]);
+				var month = 0;
+				for(var monthInd = 1; monthInd < 12; monthInd++){
+					if(MONTH_REF_NO_NUMS[monthInd] == parts[1]){
+						month = monthInd;
+						break;
+					}
+				}
+				var date = parseInt(parts[2].slice(0,-3));
+
+				return makeCleanDate(year, month, date);
 			}
 			function addTimeStrToDate(existingDate, timeStr){
 				var segments = timeStr.trim().split(":");
@@ -830,15 +852,14 @@
 				var newDate = new Date(existingDate.getFullYear(), existingDate.getMonth(), existingDate.getDate(), 0, 0, 0, 0)
 				return newDate;
 			}
-
-
-			//comparisons
-			function areDatesEqual(date1, date2){
-				return ((date1.getFullYear() == date2.getFullYear()) && (date1.getMonth() == date2.getMonth()) && (date1.getDate() == date2.getDate()));
+			function getHoursFromTimeStr(timeStr){
+				return parseInt(timeStr.split(":")[0].trim());
+			}
+			function getMinutesFromTimeStr(timeStr){
+				return parseInt(timeStr.split(":")[1].trim());
 			}
 
-
-			//type conversions
+			//location conversions
 			function locationToString(loc){
 				var lat = (Math.floor(loc.lat() * 1000000 + .5) / 1000000) + "";
 				if(lat.indexOf(".") == -1) lat += ".";
@@ -858,21 +879,6 @@
 			}
 			function coordsToLocation(lat, lng){
 				return new google.maps.LatLng(lat, lng);
-			}
-			function stringToDate(str){
-				var parts = str.split(" ");
-
-				var year = parseInt(parts[3]);
-				var month = 0;
-				for(var monthInd = 1; monthInd < 12; monthInd++){
-					if(MONTH_REF_NO_NUMS[monthInd] == parts[1]){
-						month = monthInd;
-						break;
-					}
-				}
-				var date = parseInt(parts[2].slice(0,-3));
-
-				return makeCleanDate(year, month, date);
 			}
 
 			google.maps.event.addDomListener(window, "load", initializeMap);		
