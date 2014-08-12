@@ -153,12 +153,17 @@
 
 			var fraction = 1;
 			var circlesToDraw = [];
+			var isDrawingConnections = false;
+			var connectionsToDraw = [];
+
 			var displayCircleRadius = 100;
 			var displayCircleOpacity = .1; 
 
 			var selectedLogsByDay = [];
 			var numLogsSelected = 0;
+
 			var buckets = [];
+			var bucketSizeInMins = 1440;
 			
 
 			function resize(){
@@ -370,10 +375,10 @@
 				
 				var circleOptions = {
 					strokeColor: "#0000FF",
-					strokeOpacity: 0,
+					strokeOpacity: .7,
 					strokeWeight: 1,
 					fillColor: "#0000FF",
-					fillOpacity: 0.15,
+					fillOpacity: 0,
 					map: map,
 					center: center,
 					radius:	radius,
@@ -508,7 +513,7 @@
 				var radius = document.getElementById("searchRadius").value;
 				var numRadius = parseInt(radius);
 				
-				if(isNaN(numRadius)){
+				if(isDefiningCustomRegion || isNaN(numRadius)){
 					if(searchCircle == null) setRadiusInTextBox(-1);
 					else setRadiusInTextBox(searchCircle.getRadius());
 				}
@@ -536,7 +541,7 @@
 					}
 				}
 				
-				if(searchCircle == null) setCoordinatesInTextBox(null);
+				if(isDefiningCustomRegion || searchCircle == null) setCoordinatesInTextBox(null);
 				else {
 					setCoordinatesInTextBox(searchCircle.getCenter());
 
@@ -568,16 +573,23 @@
 				else{
 					displayCircleOpacity = temp;
 					refreshListOfDisplayingLogs();
+					refreshConnections();
 				}
 			}	
 			function toggleDrawConnections(){
-				//TODO draw lines between the regions that are far away from each other
+				isDrawingConnections = !isDrawingConnections;
+
+				refreshConnections();
+			}
+			function validateAndSetGraphBucketSize(){
+				//TODO implement
 			}
 
 
 			//general refresh
 			function searchRefresh(){
 				refreshListOfDisplayingLogs();
+				refreshConnections();
 				refreshGraphBuckets();
 				drawGraph(-1);
 			}
@@ -692,6 +704,36 @@
 					setStatisticsDisplay3("There are " + circlesAround.length + " logs displaying in this region");
 				}
 			}
+			function refreshConnections(){
+				for(var i = 0; i < connectionsToDraw.length; i++){
+					connectionsToDraw[i].setMap(null);
+				}
+				connectionsToDraw = [];
+
+				if(!isDrawingConnections) return;
+
+				var polyOptions = {
+			    strokeColor: '#FF0000',
+			    strokeOpacity: displayCircleOpacity,
+			    strokeWeight: 5
+			  };
+
+			  for(var i = 0; i < selectedLogsByDay.length; i++){
+			  	for(var j = 0; j < selectedLogsByDay[i].logs.length - 1; j++){
+			  		var log1 = selectedLogsByDay[i].logs[j];
+			  		var log2 = selectedLogsByDay[i].logs[j+1];
+				  	if(areOverlapping(log1.location, log2.location)){
+				  		continue;
+				  	}
+					  var nextLine = new google.maps.Polyline(polyOptions);
+					  nextLine.setMap(map);
+					  var path = nextLine.getPath();
+			  		path.push(log1.location);
+			  		path.push(log2.location);
+			  		connectionsToDraw.push(nextLine);
+			  	}
+				}
+			}
 
 			//bottom bar graph functions
 			function refreshGraphBuckets(){
@@ -782,7 +824,8 @@
 				}
 				else setStatisticsDisplay3("");
 			}
-			function drawIndividualBucket(context, bucket, height, totNumBuckets, totLength){ //(totLength / totNumBuckets) should be an integer. totLength is like 1320, not 1340 - no padding
+			function drawIndividualBucket(context, bucket, height, totNumBuckets, totLength){
+				//(totLength / totNumBuckets) should be an integer. totLength is like 1320, not 1340 - no padding
 				context.fillRect(42 + (totLength / totNumBuckets) * bucket, 175 - height, (totLength / totNumBuckets), height);
 			}
 
@@ -819,6 +862,15 @@
 			//comparisons
 			function areDatesEqual(date1, date2){
 				return ((date1.getFullYear() == date2.getFullYear()) && (date1.getMonth() == date2.getMonth()) && (date1.getDate() == date2.getDate()));
+			}
+			function areOverlapping(loc1, loc2){
+				var circleOptions = {
+					center: loc1,
+					radius:	displayCircleRadius * 2
+				};
+
+				var circ = new google.maps.Circle(circleOptions);
+				return circ.getBounds().contains(loc2);
 			}
 
 
@@ -927,6 +979,7 @@
 					<h1>Settings</h1>
 					<input type="text" id="displayRadius" class="controls" onchange="validateAndSetDisplayRadius()" placeholder="Display Radius (default 100 ft)">
 					<input type="text" id="displayOpacity" class="controls" onchange="validateAndSetDisplayOpacity()" placeholder="Display Opacity (default .1)">
+					<!-- <input type="text" id="bucketSize" class="controls" onchange="validateAndSetGraphBucketSize()" placeholder="Graph Bucket Size (default 1 day)"> -->
 					<input type="checkbox" id="connections" onchange="toggleDrawConnections()">Draw connections</input>
 				</div>
 				<div>
