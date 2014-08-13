@@ -51,10 +51,10 @@
 			#bottomBar {
 				position: relative;
 				left: 0px;
-				top: -1175px;
-				height: 250px;
+				top: -1075px;
+				height: 150px;
 				width: 1410px;
-				background: rgba(255,255,255,0.7);
+				background: rgba(255,255,255,0.55);
 				z-index: 1;
 				outline: none;
 			}
@@ -65,11 +65,16 @@
 				top: -925px;
 				height: 925px;
 				width: 270px;
-				background: rgba(255,255,255,0.7);
+				background: rgba(255,255,255,0.85);
 				z-index: 2;
 				outline: none;
 				padding: 10;
+				box-shadow: -3px 0px 25px 5px rgba(0, 0, 0, 0.25);
 			}
+
+			#timeReset, #locationReset {
+				float: right;
+      }
 			
       input {
         background-color: #fff;
@@ -107,7 +112,6 @@
 			}
 
 			button {
-				float: right;
         margin-bottom: 4px;
         border: 1px solid transparent;
         border-radius: 2px 0 0 2px;
@@ -129,7 +133,6 @@
 					
 			var STANFORD_LOCATION = new google.maps.LatLng(37.424188, -122.166349);
 			var MIN_WIDTH = 1280; var MIN_HEIGHT = 800;
-			var MAX_BUCKETS = 330; // divisor of 1320 = 2 x 2 x 2 x 3 x 5 x 11
 			var MAX_CIRCLES_DISPLAYABLE = 2000; 
 
 			var windowWidth = window.innerWidth;
@@ -156,8 +159,8 @@
 			var isDrawingConnections = false;
 			var connectionsToDraw = [];
 
-			var displayCircleRadius = 100;
-			var displayCircleOpacity = .1; 
+			var displayCircleRadius = 50;
+			var displayCircleOpacity = .15; 
 
 			var selectedLogsByDay = [];
 			var numLogsSelected = 0;
@@ -201,7 +204,7 @@
 					
 					panControl: false,
 					zoomControl: false,
-					streetViewControl: false,
+					streetViewControl: true,
 					mapTypeControl: false
 				};
 				map = new google.maps.Map(document.getElementById("mapCanvas"), mapOptions);
@@ -246,11 +249,32 @@
 					refreshCircleMouseoverDisplay(event.latLng);
 				});
 
+				initializeStreetView();
+
 				allLogsByDay = convertAllFilesContentsToLogArrays(loadAllTextFiles());
 
 				setStatisticsDisplay(allLogsByDay.length, totalNumLogs);
 				
 				searchRefresh();
+			}
+			function initializeStreetView(){
+				var closeButton = document.querySelector('#closeButton'),
+        controlPosition = google.maps.ControlPosition.TOP_CENTER;
+
+				var streetView = map.getStreetView();
+				streetView.setOptions({enableCloseButton: false});
+
+				// Add to street view
+				streetView.controls[controlPosition].push(closeButton);
+
+				streetView.setVisible(true);
+				streetView.setVisible(false);
+
+				// Listen for click event on custom button
+				// Can also be $(document).on('click') if using jQuery
+				google.maps.event.addDomListener(closeButton, 'click', function(){
+				    streetView.setVisible(false);
+				});
 			}
 			function initializeSidebar(){
 				resetTime();
@@ -264,6 +288,7 @@
 
 				var graphCanvas = document.getElementById("bottomCanvas");
 				graphCanvas.width = bottomBarWidth - 5;
+				graphCanvas.height = 145;
 
 				graphCanvas.addEventListener('mousemove', function(event) {
 	        var mousePos = getMousePos(graphCanvas, event);
@@ -793,7 +818,7 @@
 				canvas.width = canvas.width;
 
 				var context = canvas.getContext("2d");
-				context.fillRect(32, 175, totLength + 20, 3); //should be 1320 long from (42, 175) to (1362, 175)
+				context.fillRect(32, 125, totLength + 20, 3); //should be 1320 long from (42, 175) to (1362, 175)
 
 				if(bucketSelected == -1) context.fillStyle = "#444444";
 				else context.fillStyle = "#666666";
@@ -810,7 +835,7 @@
 				graphCanvas.width = graphCanvas.width;
 
 				var bucketSelected = -1;
-				if(mousePos.x >= 42 && mousePos.x < 1362 && mousePos.y >= 75 && mousePos.y < 175){
+				if(mousePos.x >= 42 && mousePos.x < 1362 && mousePos.y >= 25 && mousePos.y < 125){
 					bucketSelected = Math.floor(((mousePos.x - 42) / 1320) * buckets.length);
 				}
 
@@ -826,7 +851,7 @@
 			}
 			function drawIndividualBucket(context, bucket, height, totNumBuckets, totLength){
 				//(totLength / totNumBuckets) should be an integer. totLength is like 1320, not 1340 - no padding
-				context.fillRect(42 + (totLength / totNumBuckets) * bucket, 175 - height, (totLength / totNumBuckets), height);
+				context.fillRect(42 + (totLength / totNumBuckets) * bucket, 125 - height, (totLength / totNumBuckets) + 1, height);
 			}
 
 
@@ -977,8 +1002,8 @@
 				<div>
 					<br>
 					<h1>Settings</h1>
-					<input type="text" id="displayRadius" class="controls" onchange="validateAndSetDisplayRadius()" placeholder="Display Radius (default 100 ft)">
-					<input type="text" id="displayOpacity" class="controls" onchange="validateAndSetDisplayOpacity()" placeholder="Display Opacity (default .1)">
+					<input type="text" id="displayRadius" class="controls" onchange="validateAndSetDisplayRadius()" placeholder="Display Radius (default 50 ft)">
+					<input type="text" id="displayOpacity" class="controls" onchange="validateAndSetDisplayOpacity()" placeholder="Display Opacity (default .15)">
 					<!-- <input type="text" id="bucketSize" class="controls" onchange="validateAndSetGraphBucketSize()" placeholder="Graph Bucket Size (default 1 day)"> -->
 					<input type="checkbox" id="connections" onchange="toggleDrawConnections()">Draw connections</input>
 				</div>
@@ -987,11 +1012,12 @@
 					<p id="currentStats"><p>
 					<p id="currentStats2"><p>
 					<p id="currentStats3"><p>
+    			<button type="button" id="closeButton">Close Street View</button>
 				</div>
 			</form>
 		</div>
 		<div id="bottomBar">
-			<canvas id="bottomCanvas" height= "245"></canvas>
+			<canvas id="bottomCanvas"></canvas>
 		</div>
 		
 		<script>
