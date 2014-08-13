@@ -133,6 +133,7 @@
 					
 			var STANFORD_LOCATION = new google.maps.LatLng(37.424188, -122.166349);
 			var MIN_WIDTH = 1280; var MIN_HEIGHT = 800;
+			var MAX_BUCKETS = 660;
 			var MAX_CIRCLES_DISPLAYABLE = 2000; 
 
 			var windowWidth = window.innerWidth;
@@ -166,7 +167,7 @@
 			var numLogsSelected = 0;
 
 			var buckets = [];
-			var bucketSizeInMins = 1440;
+			var hoursPerBucket = 24;
 			
 
 			function resize(){
@@ -374,9 +375,15 @@
 				var dateValues = startDate.split("-");
 				var timeValues = startTime.split(":");
 				
-				searchStartDate = new Date(parseInt(dateValues[0]), parseInt(dateValues[1])-1, parseInt(dateValues[2]), parseInt(timeValues[0]), parseInt(timeValues[1]), 0, 0);
-
-				searchRefresh();
+				var potStart = new Date(parseInt(dateValues[0]), parseInt(dateValues[1])-1, parseInt(dateValues[2]), parseInt(timeValues[0]), parseInt(timeValues[1]), 0, 0);
+				if(isStartBeforeEnd(potStart, searchEndDate)){
+					searchStartDate = potStart;
+					searchRefresh();
+				}
+				else{
+					document.getElementById("startDate").value = searchStartDate.getFullYear() + "-" + ("00" + (searchStartDate.getMonth() + 1)).slice(-2)  + "-" + ("00" + searchStartDate.getDate()).slice(-2);
+					document.getElementById("startTime").value = ("00" + searchStartDate.getHours()).slice(-2) + ":" + ("00" + searchStartDate.getMinutes()).slice(-2);
+				}
 			}
 			function changeEndDate(){
 				var endDate = document.getElementById("endDate").value;
@@ -384,10 +391,19 @@
 
 				var dateValues = endDate.split("-");
 				var timeValues = endTime.split(":");
-				
-				searchEndDate = new Date(parseInt(dateValues[0]), parseInt(dateValues[1])-1, parseInt(dateValues[2]), parseInt(timeValues[0]), parseInt(timeValues[1]), 0, 0);
 
-				searchRefresh();
+				var potEnd = new Date(parseInt(dateValues[0]), parseInt(dateValues[1])-1, parseInt(dateValues[2]), parseInt(timeValues[0]), parseInt(timeValues[1]), 0, 0);
+				if(isStartBeforeEnd(searchStartDate, potEnd)){
+					searchEndDate = potEnd;
+					searchRefresh();
+				}
+				else{
+					document.getElementById("endDate").value = searchEndDate.getFullYear() + "-" + ("00" + (searchEndDate.getMonth() + 1)).slice(-2)  + "-" + ("00" + searchEndDate.getDate()).slice(-2);
+					document.getElementById("endTime").value = ("00" + searchEndDate.getHours()).slice(-2) + ":" + ("00" + searchEndDate.getMinutes()).slice(-2);
+				}
+			}
+			function isStartBeforeEnd(potStart, potEnd){
+				return potStart.getTime() < potEnd.getTime();
 			}
 
 			//location
@@ -607,7 +623,27 @@
 				refreshConnections();
 			}
 			function validateAndSetGraphBucketSize(){
-				//TODO implement
+				var elements = document.getElementById("bucketSize").value.trim().split(" ");
+				var temp =  parseInt(elements[0]);
+				if(isNaN(temp)){
+					var fractionParts = elements[0].trim().split("/");
+					if(fractionParts.length != 2){
+						hoursPerBucket = 24;
+						document.getElementById("bucketSize").value = "";
+					}
+					else{
+						//TODO they put in a fraction
+					}
+				}
+				else{
+					if(elements.length > 1){
+						//TODO maybe elements[1] starts with "hr" or "hour"
+					}
+					hoursPerBucket = temp * 24;
+				}
+
+				refreshGraphBuckets();
+				drawGraph(-1);
 			}
 
 
@@ -767,9 +803,31 @@
 				var allLogsIndex = 0;
 				var loopStartDate = removeTimeFromDate(searchStartDate);
 
+				var numDays = Math.floor(((removeTimeFromDate(searchEndDate).getTime() - removeTimeFromDate(searchStartDate).getTime()) / (1000 * 60 * 60 * 24)) + .5);
+				var minDaysPerBucket = Math.floor(numDays / MAX_BUCKETS);
+				if(minDaysPerBucket == 0) minDaysPerBucket = 1;
+
+ 				if(hoursPerBucket < minDaysPerBucket * 24) 
+				{
+					hoursPerBucket = minDaysPerBucket * 24;
+ 					setBucketSizeInTextBox(minDaysPerBucket + " days");
+ 				}
+
 				while(allLogsIndex < selectedLogsByDay.length && loopStartDate.getTime() > selectedLogsByDay[allLogsIndex].date.getTime()){
 					allLogsIndex++;
 				}
+
+				var counter = 0;
+				var bucket = {
+					startDate: null,
+					endDate: null,
+					logIndices: []
+				};
+
+				if(hoursPerBucket < 24){
+					//TODO implement
+				}
+				var daysPerBucket = hoursPerBucket / 24;
 
 				for(var year = loopStartDate.getFullYear(); year <= searchEndDate.getFullYear(); year++){
 					for(var month = 0; month < 12; month++){
@@ -784,33 +842,40 @@
 								continue;
 							}
 
-							var bucket = {
-								date: currDate,
-								logIndex: -1
-							};
-
+							if(counter % daysPerBucket == 0) {
+								bucket = {
+									startDate: currDate,
+									logIndices: []
+								};
+							}
+							
 							if(allLogsIndex < selectedLogsByDay.length && areDatesEqual(currDate, selectedLogsByDay[allLogsIndex].date)){
-								bucket.logIndex = allLogsIndex;
+								bucket.logIndices.push(allLogsIndex);
 								allLogsIndex++;
 							}
 
-							buckets.push(bucket);
+							if((counter + 1) % daysPerBucket == 0) {
+								bucket.endDate = currDate;
+								buckets.push(bucket);
+							}
+							counter++;
 						}
 					}
 				}
+
+				if(!areDatesEqual(buckets[buckets.length-1].startDate, bucket.startDate)){
+					bucket.endDate = removeTimeFromDate(searchEndDate);
+					buckets.push(bucket);
+				}
 			}
 			function drawGraph(bucketSelected){
-				//TODO incorporate MAX_BUCKETS
 				var totNumBuckets = buckets.length;
 				var totLength = 1320;
 				var maxHeight = 100;
 
 				var maxNumLogs = 1;
 				for(var i = 0; i < totNumBuckets; i++){
-					var potMax = 0;
-					if(buckets[i].logIndex != -1) {
-						potMax = selectedLogsByDay[buckets[i].logIndex].logs.length;
-					}
+					var potMax = getNumLogsFromLogIndices(buckets[i].logIndices);
 					if(potMax > maxNumLogs) maxNumLogs = potMax;
 				}
 
@@ -825,11 +890,17 @@
 
 				for(var i = 0; i < totNumBuckets; i++){
 					if(bucketSelected == i) context.fillStyle = "#222222";
-					var currNumLogs = 0;
-					if(buckets[i].logIndex != -1) currNumLogs = selectedLogsByDay[buckets[i].logIndex].logs.length;
+					var currNumLogs = getNumLogsFromLogIndices(buckets[i].logIndices);
 					drawIndividualBucket(context, i, (currNumLogs / maxNumLogs) * maxHeight, totNumBuckets, totLength);
 					if(bucketSelected == i) context.fillStyle = "#666666"; //POTENTIAL could draw red box here to show bucket when number is 0
 				}
+			}
+			function getNumLogsFromLogIndices(logIndices){
+				var sum = 0;
+				for(var i = 0; i < logIndices.length; i++){
+					sum += selectedLogsByDay[logIndices[i]].logs.length;
+				}
+				return sum;
 			}
 			function drawGraphMouseoverDisplay(graphCanvas, mousePos){
 				graphCanvas.width = graphCanvas.width;
@@ -841,9 +912,9 @@
 
 				drawGraph(bucketSelected);
 				if(bucketSelected != -1){
-					var info = buckets[bucketSelected].date.toDateString() + "  ::  ";
-					if(buckets[bucketSelected].logIndex == -1) info += "0";
-					else info += selectedLogsByDay[buckets[bucketSelected].logIndex].logs.length;
+					var info = dateToShortStr(buckets[bucketSelected].startDate);
+					if(hoursPerBucket != 24) info += " - " + dateToShortStr(buckets[bucketSelected].endDate);
+					info += "  ::  " + getNumLogsFromLogIndices(buckets[bucketSelected].logIndices);
 					info += " logs";
 					setStatisticsDisplay3(info);
 				}
@@ -869,6 +940,12 @@
 					document.getElementById("searchCoordinates").value = "";
 				else 
 					document.getElementById("searchCoordinates").value = locationToString(center);
+			}
+			function setBucketSizeInTextBox(bucketSize){
+				if(bucketSize == null)
+					document.getElementById("bucketSize").value = "";
+				else
+					document.getElementById("bucketSize").value = bucketSize;
 			}
 			function setStatisticsDisplay(numDays, numLogs){
 				document.getElementById("currentStats").innerHTML = "Loaded a total of " + numLogs + " logs from " + numDays + " days";
@@ -934,6 +1011,13 @@
 			}
 			function getMinutesFromTimeStr(timeStr){
 				return parseInt(timeStr.split(":")[1].trim());
+			}
+			function dateToShortStr(existingDate){
+				var result = "";
+				result += (existingDate.getMonth() + 1) + "/";
+				result += existingDate.getDate() + "/";
+				result += existingDate.getFullYear();
+				return result;
 			}
 
 			//location conversions
@@ -1004,7 +1088,7 @@
 					<h1>Settings</h1>
 					<input type="text" id="displayRadius" class="controls" onchange="validateAndSetDisplayRadius()" placeholder="Display Radius (default 50 ft)">
 					<input type="text" id="displayOpacity" class="controls" onchange="validateAndSetDisplayOpacity()" placeholder="Display Opacity (default .15)">
-					<!-- <input type="text" id="bucketSize" class="controls" onchange="validateAndSetGraphBucketSize()" placeholder="Graph Bucket Size (default 1 day)"> -->
+					<input type="text" id="bucketSize" class="controls" onchange="validateAndSetGraphBucketSize()" placeholder="Graph Bucket Size (default 1 day)">
 					<input type="checkbox" id="connections" onchange="toggleDrawConnections()">Draw connections</input>
 				</div>
 				<div>
