@@ -32,6 +32,7 @@
         margin-top: 4px;
         margin-bottom: 12px;
 				margin-left: 16px;
+				margin-right: 16px;
 				font-size: .6em;
 			}
 			
@@ -130,11 +131,12 @@
     	//look for TODO and POTENTIAL tags
 
     	var MONTH_REF_NO_NUMS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-					
 			var STANFORD_LOCATION = new google.maps.LatLng(37.424188, -122.166349);
-			var MIN_WIDTH = 1280; var MIN_HEIGHT = 800;
+
 			var MAX_BUCKETS = 660;
-			var MAX_CIRCLES_DISPLAYABLE = 2000; 
+			var MAX_CIRCLES_DISPLAYABLE = 5000;
+
+			var MIN_WIDTH = 1280; var MIN_HEIGHT = 800;
 
 			var windowWidth = window.innerWidth;
 			var windowHeight = window.innerHeight;
@@ -160,7 +162,7 @@
 			var isDrawingConnections = false;
 			var connectionsToDraw = [];
 
-			var displayCircleRadius = 50;
+			var displayCircleRadius = 30;
 			var displayCircleOpacity = .15; 
 
 			var selectedLogsByDay = [];
@@ -343,6 +345,7 @@
 					}
 					var dayData = {
 						logs: dayLogs,
+						numErrors: 288 - dayLogs.length,
 						date: stringToDate(allFileContents[day][0])
 					};
 					allLogs.push(dayData);
@@ -368,7 +371,11 @@
 
 				searchRefresh();
 			}
-			function changeStartDate(){
+			function startDateChanged(){
+				document.getElementById("startTime").value = "00:00";
+				validateAndSetSearchStartDate();
+			}
+			function validateAndSetSearchStartDate(){
 				var startDate = document.getElementById("startDate").value;
 				var startTime = document.getElementById("startTime").value;
 
@@ -385,7 +392,7 @@
 					document.getElementById("startTime").value = ("00" + searchStartDate.getHours()).slice(-2) + ":" + ("00" + searchStartDate.getMinutes()).slice(-2);
 				}
 			}
-			function changeEndDate(){
+			function validateAndSetSearchEndDate(){
 				var endDate = document.getElementById("endDate").value;
 				var endTime = document.getElementById("endTime").value;
 
@@ -401,6 +408,10 @@
 					document.getElementById("endDate").value = searchEndDate.getFullYear() + "-" + ("00" + (searchEndDate.getMonth() + 1)).slice(-2)  + "-" + ("00" + searchEndDate.getDate()).slice(-2);
 					document.getElementById("endTime").value = ("00" + searchEndDate.getHours()).slice(-2) + ":" + ("00" + searchEndDate.getMinutes()).slice(-2);
 				}
+			}
+			function endDateChanged(){
+				document.getElementById("endTime").value = "23:59";
+				validateAndSetSearchEndDate();
 			}
 			function isStartBeforeEnd(potStart, potEnd){
 				return potStart.getTime() < potEnd.getTime();
@@ -694,6 +705,7 @@
 					if(dayLogs.length > 0){
 						var dayData = {
 							logs: dayLogs,
+							numErrors: allLogsByDay[day].numErrors,
 							date: allLogsByDay[day].date
 						};
 						selectedLogsByDay.push(dayData);
@@ -701,6 +713,7 @@
 				}
 
 				fraction = Math.floor(numLogsSelected/MAX_CIRCLES_DISPLAYABLE) + 1;
+				//POTENTIAL add a fraction to put invisible circles on the map
 
 				var counter = -1;
 				for(var day = 0; day < selectedLogsByDay.length; day++){
@@ -733,21 +746,19 @@
 				setStatisticsDisplay2(selectedLogsByDay.length, numLogsSelected, circlesToDraw.length);
 			}
 			function refreshCircleMouseoverDisplay(mouseLoc){
-				var circlesAround = [];
-				var firstIndex = 0;
+				var indicesOfNearbyCircles = [];
 				for(var index = 0; index < circlesToDraw.length; index++)
 				{
 					if(circlesToDraw[index].getBounds().contains(mouseLoc)){
-						circlesAround.push(circlesToDraw[index]);
-						firstIndex = index;
+						indicesOfNearbyCircles.push(index);
 					}
 				}
 
-				if(circlesAround.length == 0){
+				if(indicesOfNearbyCircles.length == 0){
 					setStatisticsDisplay3("");
 				}
-				else if(circlesAround.length == 1){
-					firstIndex *= fraction;
+				else if(indicesOfNearbyCircles.length == 1){
+					var firstIndex = indicesOfNearbyCircles[0] * fraction;
 					for (var day = 0; day < selectedLogsByDay.length; day++) {
 						if(selectedLogsByDay[day].logs.length <= firstIndex){
 							firstIndex -= selectedLogsByDay[day].logs.length;
@@ -761,8 +772,74 @@
 						}
 					}
 				}
-				else{
-					setStatisticsDisplay3("There are " + circlesAround.length + " logs displaying in this region");
+				else {
+					var info = "There are " + indicesOfNearbyCircles.length + " logs here from ";
+					var dateSet = [];
+					var cumuLogTotal = 0;
+					var day = 0;
+					for(var i = 0; i < indicesOfNearbyCircles.length; i++){
+						var nextIndex = indicesOfNearbyCircles[i] * fraction;
+						for ( ; day < selectedLogsByDay.length; day++) {
+							if(selectedLogsByDay[day].logs.length <= nextIndex - cumuLogTotal){
+								cumuLogTotal += selectedLogsByDay[day].logs.length;
+							}
+							else{
+								if(dateSet.length == 0 || !areDatesEqual(dateSet[dateSet.length-1], selectedLogsByDay[day].date)){
+									dateSet.push(selectedLogsByDay[day].date);
+								}
+								break;
+							}
+						}
+					}
+					
+					var monthCount = 0;
+					var firstDateOfMonth = dateSet[0];
+					var monthInfo = dateSet[0].getDate() + "";
+					var lastDay = dateSet[0].getDate();
+
+					for(var i = 1; i < dateSet.length; i++){
+						if(firstDateOfMonth.getMonth() == dateSet[i].getMonth() && firstDateOfMonth.getFullYear() == dateSet[i].getFullYear()){
+							//if we're still in the same month
+							var nextDay = dateSet[i].getDate();
+							if(nextDay != lastDay + 1){
+								//if we're not part of a range
+								if(firstDateOfMonth.getDate() != lastDay){
+									//if we were, up until now, part of a range
+									monthInfo += "-"+lastDay;
+								}
+								monthInfo += ", " + nextDay;
+								firstDateOfMonth = dateSet[i];
+							}
+							lastDay = nextDay;
+						}
+						else{
+							//if we're in a new month
+
+							if(firstDateOfMonth.getDate() != lastDay){
+								//if we were, up until now, part of a range
+								monthInfo += "-"+lastDay;
+							}
+
+							monthCount++;
+							if(monthInfo.length > 2) monthInfo = "(" + monthInfo + ")";
+							info += (firstDateOfMonth.getMonth() + 1) + "-" + monthInfo + "-" + firstDateOfMonth.getFullYear() + ", ";
+							firstDateOfMonth = dateSet[i];
+							monthInfo = dateSet[i].getDate() + "";
+							lastDay = dateSet[i].getDate();
+						}
+					}
+
+					if(firstDateOfMonth.getDate() != lastDay){
+						//if we were, up until now, part of a range
+						monthInfo += "-"+lastDay;
+					}
+
+					if(monthCount == 1) info = info.substring(0, info.length - 2) + " ";
+					if(monthCount != 0) info += "and "
+					if(monthInfo.length > 2) monthInfo = "(" + monthInfo + ")";
+					info += (firstDateOfMonth.getMonth() + 1) + "-" + monthInfo + "-" + firstDateOfMonth.getFullYear();
+
+					setStatisticsDisplay3(info);
 				}
 			}
 			function refreshConnections(){
@@ -804,8 +881,7 @@
 				var loopStartDate = removeTimeFromDate(searchStartDate);
 
 				var numDays = Math.floor(((removeTimeFromDate(searchEndDate).getTime() - removeTimeFromDate(searchStartDate).getTime()) / (1000 * 60 * 60 * 24)) + .5);
-				var minDaysPerBucket = Math.floor(numDays / MAX_BUCKETS);
-				if(minDaysPerBucket == 0) minDaysPerBucket = 1;
+				var minDaysPerBucket = Math.floor(numDays / MAX_BUCKETS) + 1;
 
  				if(hoursPerBucket < minDaysPerBucket * 24) 
 				{
@@ -874,9 +950,15 @@
 				var maxHeight = 100;
 
 				var maxNumLogs = 1;
+				var totalMissingLogs = 0;
+				var totalLogsInPeriod = 0;
+
 				for(var i = 0; i < totNumBuckets; i++){
 					var potMax = getNumLogsFromLogIndices(buckets[i].logIndices);
 					if(potMax > maxNumLogs) maxNumLogs = potMax;
+
+					totalLogsInPeriod += potMax;
+					totalMissingLogs += getNumErrorsFromLogIndices(buckets[i]);
 				}
 
 				var canvas = (document.getElementById("bottomCanvas"));
@@ -884,6 +966,8 @@
 
 				var context = canvas.getContext("2d");
 				context.fillRect(32, 125, totLength + 20, 3); //should be 1320 long from (42, 175) to (1362, 175)
+
+				//TODO working here. what should I do with graphing errors?
 
 				if(bucketSelected == -1) context.fillStyle = "#444444";
 				else context.fillStyle = "#666666";
@@ -900,6 +984,18 @@
 				for(var i = 0; i < logIndices.length; i++){
 					sum += selectedLogsByDay[logIndices[i]].logs.length;
 				}
+				return sum;
+			}
+			function getNumErrorsFromLogIndices(bucket){
+				var logIndices = bucket.logIndices;
+
+				var sum = 0;
+				for(var i = 0; i < logIndices.length; i++){
+					sum += selectedLogsByDay[logIndices[i]].numErrors;
+				}
+
+				sum += ((hoursPerBucket / 24) - logIndices.length) * 288;
+
 				return sum;
 			}
 			function drawGraphMouseoverDisplay(graphCanvas, mousePos){
@@ -1014,8 +1110,8 @@
 			}
 			function dateToShortStr(existingDate){
 				var result = "";
-				result += (existingDate.getMonth() + 1) + "/";
-				result += existingDate.getDate() + "/";
+				result += (existingDate.getMonth() + 1) + "-";
+				result += existingDate.getDate() + "-";
 				result += existingDate.getFullYear();
 				return result;
 			}
@@ -1061,10 +1157,10 @@
 							</th>
 						</tr>
 					</table>
-					<input type="date" id="startDate" class="controls" onchange="changeStartDate()" required="required"> 
-					<input type="time" id="startTime" class="controls" onchange="changeStartDate()" required="required">
-					<input type="date" id="endDate" class="controls" onchange="changeEndDate()" required="required"> 
-					<input type="time" id="endTime" class="controls" onchange="changeEndDate()" required="required">
+					<input type="date" id="startDate" class="controls" onchange="startDateChanged()" required="required"> 
+					<input type="time" id="startTime" class="controls" onchange="validateAndSetSearchStartDate()" required="required">
+					<input type="date" id="endDate" class="controls" onchange="endDateChanged()" required="required"> 
+					<input type="time" id="endTime" class="controls" onchange="validateAndSetSearchEndDate()" required="required">
 				</div>
 				<div>
 					<br>
@@ -1086,7 +1182,7 @@
 				<div>
 					<br>
 					<h1>Settings</h1>
-					<input type="text" id="displayRadius" class="controls" onchange="validateAndSetDisplayRadius()" placeholder="Display Radius (default 50 ft)">
+					<input type="text" id="displayRadius" class="controls" onchange="validateAndSetDisplayRadius()" placeholder="Display Radius (default 30 ft)">
 					<input type="text" id="displayOpacity" class="controls" onchange="validateAndSetDisplayOpacity()" placeholder="Display Opacity (default .15)">
 					<input type="text" id="bucketSize" class="controls" onchange="validateAndSetGraphBucketSize()" placeholder="Graph Bucket Size (default 1 day)">
 					<input type="checkbox" id="connections" onchange="toggleDrawConnections()">Draw connections</input>
