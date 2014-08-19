@@ -128,13 +128,13 @@
       src="https://maps.googleapis.com/maps/api/js?v=3.exp&libraries=places"> //"https://maps.googleapis.com/maps/api/js?key=AIzaSyDuzuNuG6mRj6N9f3GJWMg7EP3ZKHAdfFA">
     </script>
     <script>
-    	//look for TODO and POTENTIAL tags
+    	//look for TODO, POTENTIAL, and NOTE tags
 
     	var MONTH_REF_NO_NUMS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 			var STANFORD_LOCATION = new google.maps.LatLng(37.424188, -122.166349);
 
 			var MAX_BUCKETS = 660;
-			var MAX_CIRCLES_DISPLAYABLE = 5000;
+			var MAX_CIRCLES_DISPLAYABLE = 1000;
 
 			var MIN_WIDTH = 1280; var MIN_HEIGHT = 800;
 
@@ -146,12 +146,12 @@
 
 			var allLogsByDay = [];
 			var totalNumLogs = 0;
+			var totalMissingLogs = 0; //NOTE does not include days missed entirely, just the missing logs from days partially missed
 
 			var searchCircle = null;
 			var isDefiningCustomRegion = false;
 			var searchPolyline = null;
-			var searchPolylineMarkers = [];
-			searchPolylineMarkers.push([]);
+			var closeRegionMarker = null;
 			var searchCustomRegions = [];
 
 			var searchStartDate = null;
@@ -170,6 +170,7 @@
 
 			var buckets = [];
 			var hoursPerBucket = 24;
+			var displayGraphErrorCorrection = true;
 			
 
 			function resize(){
@@ -343,12 +344,15 @@
 						};
 						dayLogs.push(currLog);
 					}
+
 					var dayData = {
 						logs: dayLogs,
 						numErrors: 288 - dayLogs.length,
 						date: stringToDate(allFileContents[day][0])
 					};
 					allLogs.push(dayData);
+
+					totalMissingLogs += dayData.numErrors;
 				}
 				
 				return allLogs;
@@ -374,6 +378,10 @@
 			function startDateChanged(){
 				document.getElementById("startTime").value = "00:00";
 				validateAndSetSearchStartDate();
+			}
+			function endDateChanged(){
+				document.getElementById("endTime").value = "23:59";
+				validateAndSetSearchEndDate();
 			}
 			function validateAndSetSearchStartDate(){
 				var startDate = document.getElementById("startDate").value;
@@ -408,10 +416,6 @@
 					document.getElementById("endDate").value = searchEndDate.getFullYear() + "-" + ("00" + (searchEndDate.getMonth() + 1)).slice(-2)  + "-" + ("00" + searchEndDate.getDate()).slice(-2);
 					document.getElementById("endTime").value = ("00" + searchEndDate.getHours()).slice(-2) + ":" + ("00" + searchEndDate.getMinutes()).slice(-2);
 				}
-			}
-			function endDateChanged(){
-				document.getElementById("endTime").value = "23:59";
-				validateAndSetSearchEndDate();
 			}
 			function isStartBeforeEnd(potStart, potEnd){
 				return potStart.getTime() < potEnd.getTime();
@@ -454,38 +458,37 @@
 					searchRefresh();
 				});
 			}
-			function updateSearchCircleBasedOnCustomRegion(){
-				//TODO update fields in sidebar based on center, and radius with the distance to the farthest point
-
-				searchRefresh();
-			}
 			function updatePolyline(clickLoc){
-				var path = searchPolyline.getPath();
-			  path.push(clickLoc);
+				if(closeRegionMarker != null && closeRegionMarker.getMap() == null){
+			  	closeRegionMarker = null;
+			  } else {
+					var path = searchPolyline.getPath();
+				  path.push(clickLoc);
 
-			  var marker = new google.maps.Marker({
-			    position: clickLoc,
-			    title: 'Vertex ' + path.getLength(),
-			    icon: {
-			      path: google.maps.SymbolPath.CIRCLE,
-			      scale: 3
-			    },
-			    draggable: true,
-			    map: map
-			  });
+				  if(closeRegionMarker == null){
+					  closeRegionMarker = new google.maps.Marker({
+					    position: clickLoc,
+					    title: 'Click to close the region',
+					    icon: {
+					      path: google.maps.SymbolPath.CIRCLE,
+					      scale: 3
+					    },
+					    draggable: false,
+					    map: map
+					  });
 
-				google.maps.event.addListener(marker,'click',function(event) {
-					closeCustomRegion(marker);
-				});
-
-				google.maps.event.addListener(marker,'drag',function(event) {
-					dragPolylineMarker(marker);
-				});
-
-				searchPolylineMarkers[searchPolylineMarkers.length-1].push(marker);
+						google.maps.event.addListener(closeRegionMarker, 'click', function(event) {
+							closeCustomRegion();
+						});
+				  }
+				}
 			}
-			function closeCustomRegion(marker){
+			function closeCustomRegion(){
 				var path = searchPolyline.getPath();
+				if(path.length <= 2) return;
+
+				closeRegionMarker.setMap(null);
+
 				searchPolyline.setMap(null);
 				var polyOptions = {
 			    strokeColor: '#0000FF',
@@ -509,24 +512,18 @@
 
 				var searchCustomRegion = new google.maps.Polygon(polygonOptions);
 
-				google.maps.event.addListener(searchCustomRegion,'drag',function(event) {
+				google.maps.event.addListener(searchCustomRegion, 'drag', function(event) {
 					dragCustomRegion();
 				});
 
 				searchCustomRegions.push(searchCustomRegion);
 
-				updateSearchCircleBasedOnCustomRegion();
+				searchRefresh();
 			}
 			function dragCustomRegion(){
-				//TODO should change markers
-
-				updateSearchCircleBasedOnCustomRegion();
+				searchRefresh();
 			}
-			function dragPolylineMarker(marker){
-				//TODO should change polyline if it exists, and custom region if it does - but how?
 
-				updateSearchCircleBasedOnCustomRegion();
-			}
 			function resetLocation(){
 				document.getElementById("searchBox").value = "";
 				document.getElementById("searchCoordinates").value = "";
@@ -546,13 +543,7 @@
 			  searchPolyline = new google.maps.Polyline(polyOptions);
 			  searchPolyline.setMap(map);
 
-			  for(var i = 0; i < searchPolylineMarkers.length; i++){
-			  	for(var j = 0; j < searchPolylineMarkers[i].length; j++){
-						searchPolylineMarkers[i][j].setMap(null);
-					}
-				}
-				searchPolylineMarkers = [];
-				searchPolylineMarkers.push([]);
+			  closeRegionMarker = null;
 
 				for(var i = 0; i < searchCustomRegions.length; i++){
 					searchCustomRegions[i].setMap(null);
@@ -676,9 +667,14 @@
 				selectedLogsByDay = [];
 				numLogsSelected = 0;
 
-				var bounds = null;
-				if(searchCircle != null) bounds = searchCircle.getBounds();
-				if(searchCustomRegions.length != 0) bounds = searchCustomRegions[0].getBounds(); //TODO dependent on whether we're keeping this an array...?
+				var bounds = [];
+				if(searchCircle != null) bounds.push(searchCircle.getBounds());
+				//TODO working here. Idk why uncommenting this makes it stop drawing....
+				// if(searchCustomRegions.length != 0) {
+				// 	for(var i = 0; i < searchCustomRegions.length; i++){
+				// 		bounds.push(makeBounds(searchCustomRegions[i]));
+				// 	}
+				// }
 
 				var startTime = removeTimeFromDate(searchStartDate).getTime();
 				var endTime = searchEndDate.getTime();
@@ -693,7 +689,13 @@
 					var dayLogs = [];
 					for(var log = 0; log < allLogsByDay[day].logs.length; log++){
 						var nextLog = allLogsByDay[day].logs[log];
-						if((searchCircle == null && searchCustomRegions.length == 0) || bounds.contains(nextLog.location)){
+						var regionsThatContain = [];
+						// for(var i = 0; i < bounds.length; i++){
+						// 	if (bounds[i].contains(nextLog.location)){
+						// 		regionsThatContain.push(i);
+						// 	}
+						// }
+						if((searchCircle == null && searchCustomRegions.length == 0) || regionsThatContain.length != 0){
 							if(!isFirstDay || getHoursFromTimeStr(nextLog.time) > searchStartDate.getHours() || (getHoursFromTimeStr(nextLog.time) == searchStartDate.getHours() && getMinutesFromTimeStr(nextLog.time) >= searchStartDate.getMinutes())){
 								isFirstDay = false;
 								dayLogs.push(nextLog);
@@ -950,7 +952,6 @@
 				var maxHeight = 100;
 
 				var maxNumLogs = 1;
-				var totalMissingLogs = 0;
 				var totalLogsInPeriod = 0;
 
 				for(var i = 0; i < totNumBuckets; i++){
@@ -958,7 +959,6 @@
 					if(potMax > maxNumLogs) maxNumLogs = potMax;
 
 					totalLogsInPeriod += potMax;
-					totalMissingLogs += getNumErrorsFromLogIndices(buckets[i]);
 				}
 
 				var canvas = (document.getElementById("bottomCanvas"));
@@ -967,16 +967,14 @@
 				var context = canvas.getContext("2d");
 				context.fillRect(32, 125, totLength + 20, 3); //should be 1320 long from (42, 175) to (1362, 175)
 
-				//TODO working here. what should I do with graphing errors?
-
 				if(bucketSelected == -1) context.fillStyle = "#444444";
 				else context.fillStyle = "#666666";
 
 				for(var i = 0; i < totNumBuckets; i++){
-					if(bucketSelected == i) context.fillStyle = "#222222";
+					if(bucketSelected == i) context.fillStyle = "#222222"; //POTENTIAL could draw red box here to show bucket when number is 0
 					var currNumLogs = getNumLogsFromLogIndices(buckets[i].logIndices);
 					drawIndividualBucket(context, i, (currNumLogs / maxNumLogs) * maxHeight, totNumBuckets, totLength);
-					if(bucketSelected == i) context.fillStyle = "#666666"; //POTENTIAL could draw red box here to show bucket when number is 0
+					if(bucketSelected == i) context.fillStyle = "#666666"; 
 				}
 			}
 			function getNumLogsFromLogIndices(logIndices){
@@ -1117,6 +1115,18 @@
 			}
 
 			//location conversions
+			function makeBounds(customPolygon){
+				if(customPolygon.getPaths().length > 1) alert("two path polygon!");
+
+				var path = customPolygon.getPath();
+				var bounds = new google.maps.LatLngBounds(path.pop(), path.pop());
+
+				while(path.getLength() != 0){
+					bounds.extend(path.pop());
+				}
+
+				return bounds;
+			}
 			function locationToString(loc){
 				var lat = (Math.floor(loc.lat() * 1000000 + .5) / 1000000) + "";
 				if(lat.indexOf(".") == -1) lat += ".";
