@@ -76,6 +76,10 @@
 			#timeReset, #locationReset {
 				float: right;
       }
+
+      #latLngDisp {
+      	font-size: 1em;
+      }
 			
       input {
         background-color: #fff;
@@ -144,7 +148,7 @@
 			
 			var map;
 
-			var allLogsByDay = [];
+			var allLogsByDay = []; //this array stores day objects, which have "date", "numErrors", and "logs" properties. "logs" is an array of log objects that have "times"s and "location"s
 			var totalNumLogs = 0;
 			var totalMissingLogs = 0; //NOTE does not include days missed entirely, just the missing logs from days partially missed
 
@@ -157,7 +161,7 @@
 			var searchStartDate = null;
 			var searchEndDate = null;
 
-			var fraction = 1;
+			var denominatorOfFractionOfCirclesDisplaying = 1;
 			var circlesToDraw = [];
 			var isDrawingConnections = false;
 			var connectionsToDraw = [];
@@ -168,7 +172,7 @@
 			var selectedLogsByDay = [];
 			var numLogsSelected = 0;
 
-			var buckets = [];
+			var histogramBuckets = [];
 			var hoursPerBucket = 24;
 			var displayGraphErrorCorrection = true;
 			
@@ -190,12 +194,14 @@
 				
 				google.maps.event.trigger(map, "resize");
 			}
-			function getMousePos(canvas, evt) {
+			function getMousePos(canvas, event) {
+				//gets the mouse's position
         var rect = canvas.getBoundingClientRect();
-        return {
-          x: evt.clientX - rect.left,
-          y: evt.clientY - rect.top
+        var result = {
+					x: event.clientX - rect.left,
+          y: event.clientY - rect.top
         };
+        return result;
       }
 
 
@@ -245,49 +251,64 @@
 						updateSearchCircle(event.latLng);
 						searchRefresh();
 					}
-					else
+					else{
 						updatePolyline(event.latLng);
+					}
 				});
 
+				//update displays when the mouse moves over something
 				google.maps.event.addListener(map, "mousemove", function(event) {
+					setLatLngDisp(event.latLng);
 					refreshCircleMouseoverDisplay(event.latLng);
 				});
 
 				initializeStreetView();
+				initializeLatLngDisp();
 
-				allLogsByDay = convertAllFilesContentsToLogArrays(loadAllTextFiles());
+				//load all the logs
+				convertAllFilesContentsToLogArrays(loadAllTextFiles());
 
-				setStatisticsDisplay(allLogsByDay.length, totalNumLogs);
+				setTotalStatsDisplay(allLogsByDay.length, totalNumLogs);
 				
 				searchRefresh();
 			}
 			function initializeStreetView(){
+				//set up street view and its custom close button
 				var closeButton = document.querySelector('#closeButton'),
         controlPosition = google.maps.ControlPosition.TOP_CENTER;
 
 				var streetView = map.getStreetView();
 				streetView.setOptions({enableCloseButton: false});
 
-				// Add to street view
 				streetView.controls[controlPosition].push(closeButton);
 
 				streetView.setVisible(true);
 				streetView.setVisible(false);
 
-				// Listen for click event on custom button
-				// Can also be $(document).on('click') if using jQuery
+				//listen for click event on custom button
 				google.maps.event.addDomListener(closeButton, 'click', function(){
 				    streetView.setVisible(false);
 				});
 			}
+			function initializeLatLngDisp(){
+				//pushes the small lat / lng display to the top of the map
+				var latLngDisp = document.querySelector('#latLngDisp'),
+        controlPosition = google.maps.ControlPosition.TOP_CENTER;
+
+				map.controls[controlPosition].push(latLngDisp);
+			}
 			function initializeSidebar(){
+				//sets up the sidebar by setting the time and allowing mouseovers
 				resetTime();
+
 				document.getElementById("sidebar").addEventListener('mousemove', function(event) {
-	        setStatisticsDisplay3("");
+	        setMouseoverMessageDisplay("");
+	        setLatLngDisp(null);
       	}, false);
 			}
 			function initializeBottomBar(){
-				var bottomBarWidth = (/*windowWidth*/ 1680 - 270);
+				//sets up the bottom bar by setting its size and allowing mouseovers
+				var bottomBarWidth = (1680 - 270);
 				document.getElementById("bottomBar").style.width = bottomBarWidth + "px";
 
 				var graphCanvas = document.getElementById("bottomCanvas");
@@ -297,29 +318,37 @@
 				graphCanvas.addEventListener('mousemove', function(event) {
 	        var mousePos = getMousePos(graphCanvas, event);
 	        drawGraphMouseoverDisplay(graphCanvas, mousePos);
+	        setLatLngDisp(null);
       	}, false);
 			}
 			
 
 			//load and deal with actual files
 			function loadAllTextFiles(){
+				//uses php to loop through all the stored text files
 				<?php
 					$monthReference = array("01 January", "02 February", "03 March", "04 April", "05 May", "06 June", "07 July", "08 August", "09 September", "10 October", "11 November", "12 December");
+
 					$phpAllFileContents = array();
 					for($year = 2000; $year < 2200; $year++){
 						if(!file_exists("Location Logs/{$year}")) continue;
+
 						for($month = 0; $month < 12; $month++){
 							$monthStr = $monthReference[$month];
 							if(!file_exists("Location Logs/{$year}/{$monthStr}")) continue;
+
 							for($dom = 1; $dom < 32; $dom++){
 								$domStr = str_pad($dom + "", 2, "00", STR_PAD_LEFT);
 								if(!file_exists("Location Logs/{$year}/{$monthStr}/{$domStr}.txt")) continue;
-								$phpFileContents = file_get_contents("Location Logs/{$year}/{$monthStr}/{$domStr}.txt"); //file_get_contents("Location Logs/2014/07 July/14.txt");
+
+								$phpFileContents = file_get_contents("Location Logs/{$year}/{$monthStr}/{$domStr}.txt");
 								$phpAllFileContents[] = $phpFileContents;
 							}
 						}
 					}
 				?>
+
+				//expands the files as stored in php and stores them in js variables
 				var fileContentsCompressed = <?php echo json_encode($phpAllFileContents); ?>;
 				var fileContents = [];
 				for(var i = 0; i < fileContentsCompressed.length; i++){
@@ -329,7 +358,8 @@
 				return fileContents;
 			}
 			function convertAllFilesContentsToLogArrays(allFileContents){
-				var allLogs = [];
+				//converts the raw (expanded but unprocessed) data to processed, filtered shit as described in the initilization above
+				allLogsByDay = [];
 				totalNumLogs = 0;
 				
 				for(var day = 0; day < allFileContents.length; day++){;
@@ -350,18 +380,19 @@
 						numErrors: 288 - dayLogs.length,
 						date: stringToDate(allFileContents[day][0])
 					};
-					allLogs.push(dayData);
+					allLogsByDay.push(dayData);
 
 					totalMissingLogs += dayData.numErrors;
 				}
 				
-				return allLogs;
+				return allLogsByDay;
 			}
 			
 
 			//validate and use new input to the search parameters etc.
 			//time
 			function resetTime(){
+				//sets the time to defaults - the time of the first log through the current time
 				searchStartDate = new Date(2013, 5, 3, 19, 30, 0, 0);
 
 				document.getElementById("startDate").value = searchStartDate.getFullYear() + "-" + ("00" + (searchStartDate.getMonth() + 1)).slice(-2)  + "-" + ("00" + searchStartDate.getDate()).slice(-2);
@@ -376,14 +407,17 @@
 				searchRefresh();
 			}
 			function startDateChanged(){
+				//if the date is changed, set the time so it includes all of that day and then update the date
 				document.getElementById("startTime").value = "00:00";
 				validateAndSetSearchStartDate();
 			}
 			function endDateChanged(){
+				//if the date is changed, set the time so it includes all of that day and then update the date
 				document.getElementById("endTime").value = "23:59";
 				validateAndSetSearchEndDate();
 			}
 			function validateAndSetSearchStartDate(){
+				//makes sure that the start date is before the end date, then updates based on the new date
 				var startDate = document.getElementById("startDate").value;
 				var startTime = document.getElementById("startTime").value;
 
@@ -401,6 +435,7 @@
 				}
 			}
 			function validateAndSetSearchEndDate(){
+				//makes sure that the start date is before the end date, then updates based on the new date
 				var endDate = document.getElementById("endDate").value;
 				var endTime = document.getElementById("endTime").value;
 
@@ -423,6 +458,7 @@
 
 			//location
 			function updateSearchCircle(center){
+				//creates/updates the search circle based on the new location
 				var radius = 100;
 				if(searchCircle != null) {
 					radius = searchCircle.getRadius();
@@ -434,7 +470,7 @@
 					strokeOpacity: .7,
 					strokeWeight: 1,
 					fillColor: "#0000FF",
-					fillOpacity: 0,
+					fillOpacity: 0.05,
 					map: map,
 					center: center,
 					radius:	radius,
@@ -447,6 +483,7 @@
 				setCoordinatesInTextBox(searchCircle.getCenter());
 				
 				google.maps.event.addListener(searchCircle, "mousemove", function(event) {
+					setLatLngDisp(event.latLng);
 					refreshCircleMouseoverDisplay(event.latLng);
 				});
 				google.maps.event.addListener(searchCircle, "radius_changed", function() {
@@ -459,9 +496,13 @@
 				});
 			}
 			function updatePolyline(clickLoc){
+				//if the user is defining a custom region, this handles the clicks
 				if(closeRegionMarker != null && closeRegionMarker.getMap() == null){
+					//the region is intended to be closed, so close it and don't mess around
 			  	closeRegionMarker = null;
-			  } else {
+			  } 
+			  else {
+			  	//add a new point to the path, and put the marker down if it's the first click of the region
 					var path = searchPolyline.getPath();
 				  path.push(clickLoc);
 
@@ -484,11 +525,13 @@
 				}
 			}
 			function closeCustomRegion(){
+				//triggered when the start marker is clicked again, signalling the end of the region
 				var path = searchPolyline.getPath();
-				if(path.length <= 2) return;
+				if(path.length <= 2) return; //the path is still to short; there is no region really
 
 				closeRegionMarker.setMap(null);
 
+				//reset the polyline
 				searchPolyline.setMap(null);
 				var polyOptions = {
 			    strokeColor: '#0000FF',
@@ -498,22 +541,27 @@
 			  searchPolyline = new google.maps.Polyline(polyOptions);
 			  searchPolyline.setMap(map);
 
+			  //make the search polygon
 				var polygonOptions = {
 			    map: map,
 			    paths: path,
 			    strokeColor: '#0000FF',
-			    strokeOpacity: 0,
+			    strokeOpacity: .7,
 			    strokeWeight: 1,
 			    fillColor: '#0000FF',
-			    fillOpacity: 0.15,
+			    fillOpacity: 0.05,
 			    draggable: true,
 			    geodesic: true
 			  };
 
 				var searchCustomRegion = new google.maps.Polygon(polygonOptions);
 
-				google.maps.event.addListener(searchCustomRegion, 'drag', function(event) {
+				google.maps.event.addListener(searchCustomRegion, 'dragend', function(event) {
 					dragCustomRegion();
+				});
+				google.maps.event.addListener(searchCustomRegion, "mousemove", function(event) {
+					setLatLngDisp(event.latLng);
+					refreshCircleMouseoverDisplay(event.latLng);
 				});
 
 				searchCustomRegions.push(searchCustomRegion);
@@ -525,6 +573,7 @@
 			}
 
 			function resetLocation(){
+				//clear all the boxes, reset all the location-based search criteria
 				document.getElementById("searchBox").value = "";
 				document.getElementById("searchCoordinates").value = "";
 				document.getElementById("searchRadius").value = "";
@@ -553,22 +602,29 @@
 				searchRefresh();
 			}
 			function validateAndSetRadius(){
+				//make sure the radius is valid, if it is, set the circle to it
 				var radius = document.getElementById("searchRadius").value;
 				var numRadius = parseInt(radius);
 				
 				if(isDefiningCustomRegion || isNaN(numRadius)){
-					if(searchCircle == null) setRadiusInTextBox(-1);
-					else setRadiusInTextBox(searchCircle.getRadius());
+					if(searchCircle == null) {
+						setRadiusInTextBox(-1);
+					}
+					else {
+						setRadiusInTextBox(searchCircle.getRadius());
+					}
 				}
 				else {
-					if(searchCircle == null)
+					if(searchCircle == null){
 						updateSearchCircle(map.getCenter());
+					}
 					searchCircle.setRadius(numRadius);
 
 					searchRefresh();
 				}
 			}
 			function validateAndSetCoordinates(){
+				//make sure the coordinates are valid, if thet are, set the circle to them
 				var center = document.getElementById("searchCoordinates").value.trim();
 				var coords = center.split(" ");
 				
@@ -598,49 +654,53 @@
 
 			//settings
 			function validateAndSetDisplayRadius(){
+				//make sure the display radius is valid, if it is, set the circles to it
+				if(document.getElementById("displayRadius").value == ""){
+					displayCircleRadius = 30;
+					for(var i = 0; i < circlesToDraw.length; i++){
+						circlesToDraw[i].setRadius(displayCircleRadius);
+					}
+				}
 				var temp = parseInt(document.getElementById("displayRadius").value);
 				if(isNaN(temp)){
 					document.getElementById("displayRadius").value = "";
 				}
 				else{
 					displayCircleRadius = temp;
-					for(var i = 0; i < circlesToDraw.length; i++)
+					for(var i = 0; i < circlesToDraw.length; i++){
 						circlesToDraw[i].setRadius(displayCircleRadius);
+					}
 				}
 			}
 			function validateAndSetDisplayOpacity(){
+				//make sure the display opacity is valid, if it is, set the circles to it
+				if(document.getElementById("displayOpacity").value == ""){
+					displayCircleOpacity = .15;
+					refreshCirclesToDraw();
+					refreshConnections();
+				}
 				var temp =  parseFloat(document.getElementById("displayOpacity").value);
 				if(isNaN(temp)){
 					document.getElementById("displayOpacity").value = "";
 				}
 				else{
 					displayCircleOpacity = temp;
-					refreshListOfDisplayingLogs();
+					refreshCirclesToDraw();
 					refreshConnections();
 				}
 			}	
 			function toggleDrawConnections(){
 				isDrawingConnections = !isDrawingConnections;
-
 				refreshConnections();
 			}
 			function validateAndSetGraphBucketSize(){
-				var elements = document.getElementById("bucketSize").value.trim().split(" ");
-				var temp =  parseInt(elements[0]);
-				if(isNaN(temp)){
-					var fractionParts = elements[0].trim().split("/");
-					if(fractionParts.length != 2){
-						hoursPerBucket = 24;
-						document.getElementById("bucketSize").value = "";
-					}
-					else{
-						//TODO they put in a fraction
-					}
+				//make sure the bucket size is valid, if it is, set that up
+				var temp =  parseInt(document.getElementById("bucketSize").value.trim());
+				if(document.getElementById("bucketSize").value == "" || isNaN(temp)){
+					hoursPerBucket = 24;
+					document.getElementById("bucketSize").value = "";
 				}
 				else{
-					if(elements.length > 1){
-						//TODO maybe elements[1] starts with "hr" or "hour"
-					}
 					hoursPerBucket = temp * 24;
 				}
 
@@ -651,36 +711,41 @@
 
 			//general refresh
 			function searchRefresh(){
+				//reset and refresh basically all of the displays
 				refreshListOfDisplayingLogs();
+				refreshCirclesToDraw();
 				refreshConnections();
 				refreshGraphBuckets();
 				drawGraph(-1);
 			}
 
-			//get logs ready as circles to draw
+			//refresh and redraw map displays
 			function refreshListOfDisplayingLogs(){
-				for(var i = 0; i < circlesToDraw.length; i++){
-					circlesToDraw[i].setMap(null);
-				}
-				circlesToDraw = [];
-				
+				//refreshes selectedLogsByDay based on time and location
 				selectedLogsByDay = [];
 				numLogsSelected = 0;
 
+				//create an array of square regions encompassing the smaller, irregular shapes to narrow it down
 				var bounds = [];
-				if(searchCircle != null) bounds.push(searchCircle.getBounds());
-				//TODO working here. Idk why uncommenting this makes it stop drawing....
-				// if(searchCustomRegions.length != 0) {
-				// 	for(var i = 0; i < searchCustomRegions.length; i++){
-				// 		bounds.push(makeBounds(searchCustomRegions[i]));
-				// 	}
-				// }
+				if(searchCircle != null) {
+					bounds.push(searchCircle.getBounds());
+				}
+				if(searchCustomRegions.length != 0) {
+					if(bounds.length != 0) {
+						alert("Both a circle and at least one custom region are defined");
+					}
+					for(var i = 0; i < searchCustomRegions.length; i++){
+						bounds.push(makeBounds(searchCustomRegions[i]));
+					}
+				}
 
+				//set up the timing
 				var startTime = removeTimeFromDate(searchStartDate).getTime();
 				var endTime = searchEndDate.getTime();
 				var isFirstDay = true;
 
 				for(var day = 0; day < allLogsByDay.length; day++){
+					//if the time is bad, don't even look
 					var thisDaysTime = allLogsByDay[day].date.getTime();
 					if(thisDaysTime < startTime) continue;
 					if(thisDaysTime > endTime) break;
@@ -689,21 +754,46 @@
 					var dayLogs = [];
 					for(var log = 0; log < allLogsByDay[day].logs.length; log++){
 						var nextLog = allLogsByDay[day].logs[log];
-						var regionsThatContain = [];
-						// for(var i = 0; i < bounds.length; i++){
-						// 	if (bounds[i].contains(nextLog.location)){
-						// 		regionsThatContain.push(i);
-						// 	}
-						// }
-						if((searchCircle == null && searchCustomRegions.length == 0) || regionsThatContain.length != 0){
-							if(!isFirstDay || getHoursFromTimeStr(nextLog.time) > searchStartDate.getHours() || (getHoursFromTimeStr(nextLog.time) == searchStartDate.getHours() && getMinutesFromTimeStr(nextLog.time) >= searchStartDate.getMinutes())){
-								isFirstDay = false;
+						var isInARegion = false;
+
+						//if there are no bounds, we're including everything. otherwise, check to see if it's in a region
+						if(bounds.length != 0){
+							var squareRegionsThatContain = [];
+							for(var i = 0; i < bounds.length; i++){
+								if (bounds[i].contains(nextLog.location)){
+									squareRegionsThatContain.push(i);
+								}
+							}
+
+							//if none of the squares have the location in them, give up
+							if(squareRegionsThatContain.length != 0){
+								//otherwise, check either the circle or the regions that might work more thoroughly
+								if(searchCircle != null){
+									isInARegion = doesCircleContain(searchCircle, nextLog.location);
+								}
+								else{
+									for(var i = 0; i < squareRegionsThatContain.length; i++){
+										var nwPoint = bounds[squareRegionsThatContain[i]].getNorthEast();
+										var pointOutside = new google.maps.LatLng(nwPoint.lat() + .0001, nwPoint.lng() + .0001);
+										isInARegion = doesRegionContain(searchCustomRegions[squareRegionsThatContain[i]], nextLog.location, pointOutside);
+										if(isInARegion) break;
+									}
+								}
+							}
+						}
+
+						//if the time works, check on the location
+						if(!isFirstDay || getHoursFromTimeStr(nextLog.time) > searchStartDate.getHours() || (getHoursFromTimeStr(nextLog.time) == searchStartDate.getHours() && getMinutesFromTimeStr(nextLog.time) >= searchStartDate.getMinutes())){
+							isFirstDay = false;
+							//if there are no bounds, or this is in the bounds, add it to the ones currently selected
+							if(bounds.length == 0 || isInARegion){
 								dayLogs.push(nextLog);
 								numLogsSelected++;
 							}
 						}
 					}
 
+					//if we got more than one log for the day, make a log for the day and add it to selectedLogsByDay
 					if(dayLogs.length > 0){
 						var dayData = {
 							logs: dayLogs,
@@ -713,16 +803,26 @@
 						selectedLogsByDay.push(dayData);
 					}
 				}
+			}
+			function refreshCirclesToDraw(){
+				//reset the old circles
+				for(var i = 0; i < circlesToDraw.length; i++){
+					circlesToDraw[i].setMap(null);
+				}
+				circlesToDraw = [];
 
-				fraction = Math.floor(numLogsSelected/MAX_CIRCLES_DISPLAYABLE) + 1;
+				//calculate how often we're going to draw the circle we have
+				denominatorOfFractionOfCirclesDisplaying = Math.floor(numLogsSelected/MAX_CIRCLES_DISPLAYABLE) + 1;
 				//POTENTIAL add a fraction to put invisible circles on the map
 
 				var counter = -1;
 				for(var day = 0; day < selectedLogsByDay.length; day++){
 					for(var log = 0; log < selectedLogsByDay[day].logs.length; log++){
+						//a very straightforward way of skipping a high portion of the logs
 						counter++;
-						if(counter % fraction != 0) continue;
+						if(counter % denominatorOfFractionOfCirclesDisplaying != 0) continue;
 
+						//make a new circle
 						var circleOptions = {
 							strokeColor: "#FF0000",
 							strokeOpacity: 0,
@@ -737,18 +837,33 @@
 
 						var currCircle = new google.maps.Circle(circleOptions);
 
+						//register some listeners so it behaves basically just like the map
 						google.maps.event.addListener(currCircle, "mousemove", function(event) {
+							setLatLngDisp(event.latLng);
 							refreshCircleMouseoverDisplay(event.latLng);
 						});
 
+						google.maps.event.addListener(currCircle, "click", function(event) {
+							if(!isDefiningCustomRegion){
+								updateSearchCircle(event.latLng);
+								searchRefresh();
+							}
+							else{
+								updatePolyline(event.latLng);
+							}
+						});
+
+						//add the circle to the list
 						circlesToDraw.push(currCircle);
 					}
 				}
 
-				setStatisticsDisplay2(selectedLogsByDay.length, numLogsSelected, circlesToDraw.length);
+				setCurrentlyDisplayingStatisticsDisplay(selectedLogsByDay.length, numLogsSelected, circlesToDraw.length);
 			}
 			function refreshCircleMouseoverDisplay(mouseLoc){
+				//updates the current mouseover display with information about the log(s) that the mouse is over
 				var indicesOfNearbyCircles = [];
+				//make a list of the indices (in the circle list) of the circles that contain the mouse's location
 				for(var index = 0; index < circlesToDraw.length; index++)
 				{
 					if(circlesToDraw[index].getBounds().contains(mouseLoc)){
@@ -757,10 +872,13 @@
 				}
 
 				if(indicesOfNearbyCircles.length == 0){
-					setStatisticsDisplay3("");
+				//if there are no logs nearby, don't display anything
+					setMouseoverMessageDisplay("");
 				}
 				else if(indicesOfNearbyCircles.length == 1){
-					var firstIndex = indicesOfNearbyCircles[0] * fraction;
+					//if there is just one log, give all of its information
+					var firstIndex = indicesOfNearbyCircles[0] * denominatorOfFractionOfCirclesDisplaying;
+
 					for (var day = 0; day < selectedLogsByDay.length; day++) {
 						if(selectedLogsByDay[day].logs.length <= firstIndex){
 							firstIndex -= selectedLogsByDay[day].logs.length;
@@ -768,19 +886,23 @@
 						else{
 							var currTime = selectedLogsByDay[day].logs[firstIndex].time;
 							var currDate = selectedLogsByDay[day].date;
+
 							currDate = addTimeStrToDate(currDate, currTime);
-							setStatisticsDisplay3("This log is from " + currDate.toLocaleTimeString() + " on " + currDate.toLocaleDateString());
+							setMouseoverMessageDisplay("This log is from " + currDate.toLocaleTimeString() + " on " + currDate.toLocaleDateString());
 							break;
 						}
 					}
 				}
 				else {
+					//if there are many logs, we're going to have to condense to fit them in that little area
 					var info = "There are " + indicesOfNearbyCircles.length + " logs here from ";
+
+					//create a set of all the dates that these circles are from
 					var dateSet = [];
 					var cumuLogTotal = 0;
 					var day = 0;
 					for(var i = 0; i < indicesOfNearbyCircles.length; i++){
-						var nextIndex = indicesOfNearbyCircles[i] * fraction;
+						var nextIndex = indicesOfNearbyCircles[i] * denominatorOfFractionOfCirclesDisplaying;
 						for ( ; day < selectedLogsByDay.length; day++) {
 							if(selectedLogsByDay[day].logs.length <= nextIndex - cumuLogTotal){
 								cumuLogTotal += selectedLogsByDay[day].logs.length;
@@ -794,11 +916,13 @@
 						}
 					}
 					
+					//variables to keep track of where we are in this complicated date string creating
 					var monthCount = 0;
 					var firstDateOfMonth = dateSet[0];
 					var monthInfo = dateSet[0].getDate() + "";
 					var lastDay = dateSet[0].getDate();
 
+					//go through the days and, if it's a new month, do a whole reset. otherwise, make a range if there are several days in a row. otherwise just add the date
 					for(var i = 1; i < dateSet.length; i++){
 						if(firstDateOfMonth.getMonth() == dateSet[i].getMonth() && firstDateOfMonth.getFullYear() == dateSet[i].getFullYear()){
 							//if we're still in the same month
@@ -823,7 +947,9 @@
 							}
 
 							monthCount++;
-							if(monthInfo.length > 2) monthInfo = "(" + monthInfo + ")";
+							if(monthInfo.length > 2) {
+								monthInfo = "(" + monthInfo + ")";
+							}
 							info += (firstDateOfMonth.getMonth() + 1) + "-" + monthInfo + "-" + firstDateOfMonth.getFullYear() + ", ";
 							firstDateOfMonth = dateSet[i];
 							monthInfo = dateSet[i].getDate() + "";
@@ -836,15 +962,22 @@
 						monthInfo += "-"+lastDay;
 					}
 
-					if(monthCount == 1) info = info.substring(0, info.length - 2) + " ";
-					if(monthCount != 0) info += "and "
-					if(monthInfo.length > 2) monthInfo = "(" + monthInfo + ")";
+					if(monthCount == 1) {
+						info = info.substring(0, info.length - 2) + " ";
+					}
+					if(monthCount != 0) {
+						info += "and "
+					}
+					if(monthInfo.length > 2) {
+						monthInfo = "(" + monthInfo + ")";
+					}
 					info += (firstDateOfMonth.getMonth() + 1) + "-" + monthInfo + "-" + firstDateOfMonth.getFullYear();
 
-					setStatisticsDisplay3(info);
+					setMouseoverMessageDisplay(info);
 				}
 			}
 			function refreshConnections(){
+				//draw all the connections between all the logs
 				for(var i = 0; i < connectionsToDraw.length; i++){
 					connectionsToDraw[i].setMap(null);
 				}
@@ -852,22 +985,26 @@
 
 				if(!isDrawingConnections) return;
 
+				//the options for all the polylines
 				var polyOptions = {
 			    strokeColor: '#FF0000',
 			    strokeOpacity: displayCircleOpacity,
 			    strokeWeight: 5
 			  };
 
+			  //go through literally every day and connect the logs if the two logs' respective circles don't already overlap
 			  for(var i = 0; i < selectedLogsByDay.length; i++){
 			  	for(var j = 0; j < selectedLogsByDay[i].logs.length - 1; j++){
 			  		var log1 = selectedLogsByDay[i].logs[j];
 			  		var log2 = selectedLogsByDay[i].logs[j+1];
-				  	if(areOverlapping(log1.location, log2.location)){
-				  		continue;
-				  	}
+			  		//TODO make time work?
+				  	if(areOverlapping(log1.location, log2.location)) continue;
+
 					  var nextLine = new google.maps.Polyline(polyOptions);
 					  nextLine.setMap(map);
 					  var path = nextLine.getPath();
+
+					  //add the locations to the path and add the path to the list of paths
 			  		path.push(log1.location);
 			  		path.push(log2.location);
 			  		connectionsToDraw.push(nextLine);
@@ -877,11 +1014,13 @@
 
 			//bottom bar graph functions
 			function refreshGraphBuckets(){
-				buckets = [];
+				//create all the buckets to be drawn in the graph (works with the selected logs, but also adds the days that aren't there and formats for graphing)
+				histogramBuckets = [];
 
 				var allLogsIndex = 0;
 				var loopStartDate = removeTimeFromDate(searchStartDate);
 
+				//calculate the total number of days, and thus minimum size of a bucket to make the graph look ok
 				var numDays = Math.floor(((removeTimeFromDate(searchEndDate).getTime() - removeTimeFromDate(searchStartDate).getTime()) / (1000 * 60 * 60 * 24)) + .5);
 				var minDaysPerBucket = Math.floor(numDays / MAX_BUCKETS) + 1;
 
@@ -891,10 +1030,12 @@
  					setBucketSizeInTextBox(minDaysPerBucket + " days");
  				}
 
+ 				//bring the index here that we use match buckets to day logs up so that they match at the start
 				while(allLogsIndex < selectedLogsByDay.length && loopStartDate.getTime() > selectedLogsByDay[allLogsIndex].date.getTime()){
 					allLogsIndex++;
 				}
 
+				//the bucket template we will use for all the buckets
 				var counter = 0;
 				var bucket = {
 					startDate: null,
@@ -902,24 +1043,23 @@
 					logIndices: []
 				};
 
-				if(hoursPerBucket < 24){
-					//TODO implement
-				}
 				var daysPerBucket = hoursPerBucket / 24;
 
+				//go through each actual day that there is (not from the logs, from the real calendar)
 				for(var year = loopStartDate.getFullYear(); year <= searchEndDate.getFullYear(); year++){
 					for(var month = 0; month < 12; month++){
 						if(year == loopStartDate.getFullYear() && month < loopStartDate.getMonth()) continue;
 						if(year == searchEndDate.getFullYear() && month > searchEndDate.getMonth()) break;
+
 						for(var dom = 1; dom < 32; dom++){
 							if(year == loopStartDate.getFullYear() && month == loopStartDate.getMonth() && dom < loopStartDate.getDate()) continue;
 							if(year == searchEndDate.getFullYear() && month == searchEndDate.getMonth() && dom > searchEndDate.getDate()) break;
 
+							//if this day doesn't actually exist, that's a problem
 							var currDate = makeCleanDate(year, month, dom);
-							if(dom != currDate.getDate()) {
-								continue;
-							}
+							if(dom != currDate.getDate()) continue;
 
+							//it's a new bucket
 							if(counter % daysPerBucket == 0) {
 								bucket = {
 									startDate: currDate,
@@ -927,27 +1067,30 @@
 								};
 							}
 							
+							//add this day to the current bucket's list of days
 							if(allLogsIndex < selectedLogsByDay.length && areDatesEqual(currDate, selectedLogsByDay[allLogsIndex].date)){
 								bucket.logIndices.push(allLogsIndex);
 								allLogsIndex++;
 							}
 
+							//if this is the last day of the bucket, add it to the bucket list
 							if((counter + 1) % daysPerBucket == 0) {
 								bucket.endDate = currDate;
-								buckets.push(bucket);
+								histogramBuckets.push(bucket);
 							}
 							counter++;
 						}
 					}
 				}
 
-				if(!areDatesEqual(buckets[buckets.length-1].startDate, bucket.startDate)){
+				//check if the last bucket should be added, and add it if so
+				if(!areDatesEqual(histogramBuckets[histogramBuckets.length-1].startDate, bucket.startDate)){
 					bucket.endDate = removeTimeFromDate(searchEndDate);
-					buckets.push(bucket);
+					histogramBuckets.push(bucket);
 				}
 			}
 			function drawGraph(bucketSelected){
-				var totNumBuckets = buckets.length;
+				var totNumBuckets = histogramBuckets.length;
 				var totLength = 1320;
 				var maxHeight = 100;
 
@@ -955,8 +1098,10 @@
 				var totalLogsInPeriod = 0;
 
 				for(var i = 0; i < totNumBuckets; i++){
-					var potMax = getNumLogsFromLogIndices(buckets[i].logIndices);
-					if(potMax > maxNumLogs) maxNumLogs = potMax;
+					var potMax = getNumLogsFromLogIndices(histogramBuckets[i].logIndices);
+					if(potMax > maxNumLogs) {
+						maxNumLogs = potMax;
+					}
 
 					totalLogsInPeriod += potMax;
 				}
@@ -971,10 +1116,16 @@
 				else context.fillStyle = "#666666";
 
 				for(var i = 0; i < totNumBuckets; i++){
-					if(bucketSelected == i) context.fillStyle = "#222222"; //POTENTIAL could draw red box here to show bucket when number is 0
-					var currNumLogs = getNumLogsFromLogIndices(buckets[i].logIndices);
+					if(bucketSelected == i) {
+						context.fillStyle = "#222222";
+					}
+
+					var currNumLogs = getNumLogsFromLogIndices(histogramBuckets[i].logIndices);
 					drawIndividualBucket(context, i, (currNumLogs / maxNumLogs) * maxHeight, totNumBuckets, totLength);
-					if(bucketSelected == i) context.fillStyle = "#666666"; 
+
+					if(bucketSelected == i) {
+						context.fillStyle = "#666666";
+					}
 				}
 			}
 			function getNumLogsFromLogIndices(logIndices){
@@ -984,35 +1135,24 @@
 				}
 				return sum;
 			}
-			function getNumErrorsFromLogIndices(bucket){
-				var logIndices = bucket.logIndices;
-
-				var sum = 0;
-				for(var i = 0; i < logIndices.length; i++){
-					sum += selectedLogsByDay[logIndices[i]].numErrors;
-				}
-
-				sum += ((hoursPerBucket / 24) - logIndices.length) * 288;
-
-				return sum;
-			}
 			function drawGraphMouseoverDisplay(graphCanvas, mousePos){
 				graphCanvas.width = graphCanvas.width;
 
 				var bucketSelected = -1;
 				if(mousePos.x >= 42 && mousePos.x < 1362 && mousePos.y >= 25 && mousePos.y < 125){
-					bucketSelected = Math.floor(((mousePos.x - 42) / 1320) * buckets.length);
+					bucketSelected = Math.floor(((mousePos.x - 42) / 1320) * histogramBuckets.length);
 				}
 
 				drawGraph(bucketSelected);
 				if(bucketSelected != -1){
-					var info = dateToShortStr(buckets[bucketSelected].startDate);
-					if(hoursPerBucket != 24) info += " - " + dateToShortStr(buckets[bucketSelected].endDate);
-					info += "  ::  " + getNumLogsFromLogIndices(buckets[bucketSelected].logIndices);
-					info += " logs";
-					setStatisticsDisplay3(info);
+					var info = dateToShortStr(histogramBuckets[bucketSelected].startDate);
+					if(hoursPerBucket != 24) {
+						info += " - " + dateToShortStr(histogramBuckets[bucketSelected].endDate);
+					}
+					info += "  ::  " + getNumLogsFromLogIndices(histogramBuckets[bucketSelected].logIndices) + " logs";
+					setMouseoverMessageDisplay(info);
 				}
-				else setStatisticsDisplay3("");
+				else setMouseoverMessageDisplay("");
 			}
 			function drawIndividualBucket(context, bucket, height, totNumBuckets, totLength){
 				//(totLength / totNumBuckets) should be an integer. totLength is like 1320, not 1340 - no padding
@@ -1022,38 +1162,52 @@
 
 			//set values in sidebar based on inside changes
 			function setRadiusInTextBox(radius){
-				if(radius < 0)
+				if(radius < 0) {
 					document.getElementById("searchRadius").value = "";
+				}
 				else {
 					radius = Math.floor(radius + .5);
 					document.getElementById("searchRadius").value = radius;
 				}
 			}
 			function setCoordinatesInTextBox(center){
-				if(center == null)
+				if(center == null) {
 					document.getElementById("searchCoordinates").value = "";
-				else 
+				}
+				else {
 					document.getElementById("searchCoordinates").value = locationToString(center);
+				}
 			}
 			function setBucketSizeInTextBox(bucketSize){
-				if(bucketSize == null)
+				if(bucketSize == null) {
 					document.getElementById("bucketSize").value = "";
-				else
+				}
+				else {
 					document.getElementById("bucketSize").value = bucketSize;
+				}
 			}
-			function setStatisticsDisplay(numDays, numLogs){
-				document.getElementById("currentStats").innerHTML = "Loaded a total of " + numLogs + " logs from " + numDays + " days";
+			function setTotalStatsDisplay(numDays, numLogs){
+				document.getElementById("totalStats").innerHTML = "Loaded a total of " + numLogs + " logs from " + numDays + " days";
 			}
-			function setStatisticsDisplay2(numDays, numLogsSelected, numLogsDisplaying){ 
-				if(numLogsDisplaying == numLogsSelected)
-					document.getElementById("currentStats2").innerHTML = "Displaying " + numLogsDisplaying + " logs from " + numDays + " days";
-				else
-					document.getElementById("currentStats2").innerHTML = "Displaying " + numLogsDisplaying + " of " + numLogsSelected + " logs from " + numDays + " days";
+			function setCurrentlyDisplayingStatisticsDisplay(numDays, numLogsSelected, numLogsDisplaying){ 
+				if(numLogsDisplaying == numLogsSelected) {
+					document.getElementById("currentlyDisplayingStats").innerHTML = "Displaying " + numLogsDisplaying + " logs from " + numDays + " days";
+				}
+				else {
+					document.getElementById("currentlyDisplayingStats").innerHTML = "Displaying " + numLogsDisplaying + " of " + numLogsSelected + " logs from " + numDays + " days";
+				}
 			}
-			function setStatisticsDisplay3(message){
-				document.getElementById("currentStats3").innerHTML = message;
+			function setMouseoverMessageDisplay(message){
+				document.getElementById("mouseoverMessage").innerHTML = message;
 			}
-
+			function setLatLngDisp(loc){
+				if(loc == null) {
+					document.getElementById("latLngDisp").innerHTML = "";
+				}
+				else {
+					document.getElementById("latLngDisp").innerHTML = locationToString(loc);
+				}
+			}
 
 			//comparisons
 			function areDatesEqual(date1, date2){
@@ -1067,6 +1221,67 @@
 
 				var circ = new google.maps.Circle(circleOptions);
 				return circ.getBounds().contains(loc2);
+			}
+			function doesCircleContain(circle, loc){
+				var dist = google.maps.geometry.spherical.computeDistanceBetween(circle.getCenter(), loc);
+				return (dist < circle.getRadius());
+			}
+			function doesRegionContain(region, loc, pointOutside){
+				var path = region.getPath();
+				var pathLength = path.getLength();
+
+				var totalIntersections = 0;
+				for(var i = 0; i < pathLength; i++){
+					if(doLinesIntersect(loc, pointOutside, path.getAt(i), path.getAt((i+1)%pathLength))){
+						totalIntersections++;
+					}
+				}
+
+				return ((totalIntersections % 2) == 1);
+			}
+			function doLinesIntersect(pointToTest, pointOutside, vx1, vx2) {
+				var ln1vx1 = {
+					x: pointToTest.lng(),
+					y: pointToTest.lat()
+				};
+				var ln1vx2 = {
+					x: pointOutside.lng(),
+					y: pointOutside.lat()
+				};
+				var ln2vx1 = {
+					x: vx1.lng(),
+					y: vx1.lat()
+				};
+				var ln2vx2 = {
+					x: vx2.lng(),
+					y: vx2.lat()
+				};
+
+		    var d1, d2;
+		    var a1, a2, b1, b2, c1, c2;
+
+		    a1 = ln1vx2.y - ln1vx1.y;
+		    b1 = ln1vx1.x - ln1vx2.x;
+		    c1 = (ln1vx2.x * ln1vx1.y) - (ln1vx1.x * ln1vx2.y);
+
+		    d1 = (a1 * ln2vx1.x) + (b1 * ln2vx1.y) + c1;
+		    d2 = (a1 * ln2vx2.x) + (b1 * ln2vx2.y) + c1;
+
+		    if (d1 * d2 > 0) return false;
+
+		    a2 = ln2vx2.y - ln2vx1.y;
+		    b2 = ln2vx1.x - ln2vx2.x;
+		    c2 = (ln2vx2.x * ln2vx1.y) - (ln2vx1.x * ln2vx2.y);
+
+		    d1 = (a2 * ln1vx1.x) + (b2 * ln1vx1.y) + c2;
+		    d2 = (a2 * ln1vx2.x) + (b2 * ln1vx2.y) + c2;
+
+		    if (d1 * d2 > 0) return false;
+
+		    //this is the colinear case, not really likely to be a big deal
+		    if ((a1 * b2) - (a2 * b1) == 0) false;
+
+		    return true;
 			}
 
 
@@ -1097,8 +1312,7 @@
 				return existingDate;
 			}
 			function removeTimeFromDate(existingDate){
-				var newDate = new Date(existingDate.getFullYear(), existingDate.getMonth(), existingDate.getDate(), 0, 0, 0, 0)
-				return newDate;
+				return new Date(existingDate.getFullYear(), existingDate.getMonth(), existingDate.getDate(), 0, 0, 0, 0);
 			}
 			function getHoursFromTimeStr(timeStr){
 				return parseInt(timeStr.split(":")[0].trim());
@@ -1116,24 +1330,30 @@
 
 			//location conversions
 			function makeBounds(customPolygon){
-				if(customPolygon.getPaths().length > 1) alert("two path polygon!");
+				if(customPolygon.getPaths().length > 1) {
+					alert("two path polygon!");
+				}
 
 				var path = customPolygon.getPath();
-				var bounds = new google.maps.LatLngBounds(path.pop(), path.pop());
+				var bounds = new google.maps.LatLngBounds(path.getAt(0), path.getAt(1));
 
-				while(path.getLength() != 0){
-					bounds.extend(path.pop());
+				for(var i = 2; i < path.getLength(); i++){
+					bounds.extend(path.getAt(i));
 				}
 
 				return bounds;
 			}
 			function locationToString(loc){
 				var lat = (Math.floor(loc.lat() * 1000000 + .5) / 1000000) + "";
-				if(lat.indexOf(".") == -1) lat += ".";
+				if(lat.indexOf(".") == -1) {
+					lat += ".";
+				}
 				lat = (lat + "000000").slice(0, 7 + lat.indexOf("."));
 				
 				var lng = (Math.floor(loc.lng() * 1000000 + .5) / 1000000) + "";
-				if(lng.indexOf(".") == -1) lng += ".";
+				if(lng.indexOf(".") == -1) {
+					lng += ".";
+				}
 				lng = (lng + "000000").slice(0, 7 + lng.indexOf("."));
 				
 				return lat + ", " + lng;
@@ -1199,11 +1419,14 @@
 				</div>
 				<div>
 					<br><br><br>
-					<p id="currentStats"><p>
-					<p id="currentStats2"><p>
-					<p id="currentStats3"><p>
-    			<button type="button" id="closeButton">Close Street View</button>
+					<p id="totalStats"><p>
+					<p id="currentlyDisplayingStats"><p>
+					<p id="mouseoverMessage"><p>
 				</div>
+				<div>
+				  <button type="button" id="closeButton">Close Street View</button>
+    			<p id="latLngDisp"><p>
+    		</div>
 			</form>
 		</div>
 		<div id="bottomBar">
