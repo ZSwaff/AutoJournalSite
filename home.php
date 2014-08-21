@@ -6,16 +6,10 @@
     <meta name="viewport" content="initial-scale=1.0, user-scalable=no">
     <meta charset="utf-8">
     <style type="text/css">
-      html, body {
+      html, body, #mapCanvas {
         height: 100%;
-        margin: 0px;
-        padding: 0px;
-        font-family: Roboto;
-      }
-			
-			#mapCanvas {
-        height: 925px;
-				width: 1680px;
+        min-width: 1280px;
+    		min-height: 800px;
         margin: 0px;
         padding: 0px;
         font-family: Roboto;
@@ -60,6 +54,7 @@
 				background: rgba(255,255,255,0.55);
 				z-index: 1;
 				outline: none;
+				box-shadow: 0px -3px 25px 5px rgba(0, 0, 0, 0.2);
 			}
 			
 			#sidebar {
@@ -133,15 +128,13 @@
       src="https://maps.googleapis.com/maps/api/js?v=3.exp&libraries=places"> //"https://maps.googleapis.com/maps/api/js?key=AIzaSyDuzuNuG6mRj6N9f3GJWMg7EP3ZKHAdfFA">
     </script>
     <script>
-    	//look for TODO, POTENTIAL, and NOTE tags
+    	//look for CURRENT, TODO, POTENTIAL, and NOTE tags
 
     	var MONTH_REF_NO_NUMS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 			var STANFORD_LOCATION = new google.maps.LatLng(37.424188, -122.166349);
 
 			var MAX_BUCKETS = 660;
 			var MAX_CIRCLES_DISPLAYABLE = 1000;
-
-			var MIN_WIDTH = 1280; var MIN_HEIGHT = 800;
 
 
 			var windowWidth = window.innerWidth;
@@ -180,21 +173,13 @@
 			
 
 			function resize(){
-				//TODO fix - this method doesn't work as intended
 				windowWidth = window.innerWidth;
 				windowHeight = window.innerHeight;
 				
-				if(window.innerWidth < MIN_WIDTH) {
-					windowWidth = MIN_WIDTH;
-				}
-				if(window.innerHeight < MIN_HEIGHT) {
-					windowHeight = MIN_HEIGHT;
-				}
-				
-				document.getElementById("mapCanvas").width = windowWidth;
-				document.getElementById("mapCanvas").height = windowHeight;
-				
-				google.maps.event.trigger(map, "resize");
+				//CURRENT
+				//TODO move sidebar
+				//resize bottom bar, graph
+				//set this method up to be called at start, too
 			}
 			function getMousePos(canvas, event) {
 				//gets the mouse's position
@@ -1413,7 +1398,7 @@
 			google.maps.event.addDomListener(window, "load", initializeMap);		
 		</script>
 	</head>
-  <body> <!--   <body onresize="resize()">   -->
+  <body onresize="resize()">
     <div id="mapCanvas"></div>
 		<div id="sidebar">
 			<form>
