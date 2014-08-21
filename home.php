@@ -1,6 +1,8 @@
 <!DOCTYPE html>
 <html>
   <head>
+  	<link rel="shortcut icon" href="http://localhost/AutoJournal/res/icon.ico">
+    <title>AutoJournal</title>
     <meta name="viewport" content="initial-scale=1.0, user-scalable=no">
     <meta charset="utf-8">
     <style type="text/css">
@@ -127,7 +129,6 @@
         box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
       }
     </style>
-    <title>AutoJournal</title>
 		<script type="text/javascript"
       src="https://maps.googleapis.com/maps/api/js?v=3.exp&libraries=places"> //"https://maps.googleapis.com/maps/api/js?key=AIzaSyDuzuNuG6mRj6N9f3GJWMg7EP3ZKHAdfFA">
     </script>
