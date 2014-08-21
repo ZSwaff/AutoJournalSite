@@ -142,6 +142,7 @@
 
 			var MIN_WIDTH = 1280; var MIN_HEIGHT = 800;
 
+
 			var windowWidth = window.innerWidth;
 			var windowHeight = window.innerHeight;
 			var bottomBarWidth;
@@ -205,7 +206,7 @@
       }
 
 
-			//init
+			//init display
 			function initializeMap(){
 				var mapOptions = {
 					mapTypeId: google.maps.MapTypeId.ROADMAP,
@@ -389,7 +390,7 @@
 			}
 			
 
-			//validate and use new input to the search parameters etc.
+			//validate and use new input
 			//time
 			function resetTime(){
 				//sets the time to defaults - the time of the first log through the current time
@@ -451,9 +452,6 @@
 					document.getElementById("endDate").value = searchEndDate.getFullYear() + "-" + ("00" + (searchEndDate.getMonth() + 1)).slice(-2)  + "-" + ("00" + searchEndDate.getDate()).slice(-2);
 					document.getElementById("endTime").value = ("00" + searchEndDate.getHours()).slice(-2) + ":" + ("00" + searchEndDate.getMinutes()).slice(-2);
 				}
-			}
-			function isStartBeforeEnd(potStart, potEnd){
-				return potStart.getTime() < potEnd.getTime();
 			}
 
 			//location
@@ -557,7 +555,7 @@
 				var searchCustomRegion = new google.maps.Polygon(polygonOptions);
 
 				google.maps.event.addListener(searchCustomRegion, 'dragend', function(event) {
-					dragCustomRegion();
+					searchRefresh();
 				});
 				google.maps.event.addListener(searchCustomRegion, "mousemove", function(event) {
 					setLatLngDisp(event.latLng);
@@ -566,9 +564,6 @@
 
 				searchCustomRegions.push(searchCustomRegion);
 
-				searchRefresh();
-			}
-			function dragCustomRegion(){
 				searchRefresh();
 			}
 
@@ -633,7 +628,7 @@
 					var lng = parseFloat(coords[1]);
 					
 					if(!isNaN(lat) && !isNaN(lng)) {
-						var loc = coordsToLocation(lat, lng);
+						var loc = new google.maps.LatLng(lat, lng);
 						updateSearchCircle(loc);
 						map.panTo(loc);
 						return;
@@ -732,7 +727,7 @@
 				}
 				if(searchCustomRegions.length != 0) {
 					if(bounds.length != 0) {
-						alert("Both a circle and at least one custom region are defined");
+						alert("both a circle and at least one custom region are defined!");
 					}
 					for(var i = 0; i < searchCustomRegions.length; i++){
 						bounds.push(makeBounds(searchCustomRegions[i]));
@@ -775,6 +770,7 @@
 									for(var i = 0; i < squareRegionsThatContain.length; i++){
 										var nwPoint = bounds[squareRegionsThatContain[i]].getNorthEast();
 										var pointOutside = new google.maps.LatLng(nwPoint.lat() + .0001, nwPoint.lng() + .0001);
+
 										isInARegion = doesRegionContain(searchCustomRegions[squareRegionsThatContain[i]], nextLog.location, pointOutside);
 										if(isInARegion) break;
 									}
@@ -1090,6 +1086,7 @@
 				}
 			}
 			function drawGraph(bucketSelected){
+				//actually draws the graph, based on the updated buckets
 				var totNumBuckets = histogramBuckets.length;
 				var totLength = 1320;
 				var maxHeight = 100;
@@ -1097,6 +1094,7 @@
 				var maxNumLogs = 1;
 				var totalLogsInPeriod = 0;
 
+				//find the maximum number of logs in any day, so that the graph can be normalized to that height
 				for(var i = 0; i < totNumBuckets; i++){
 					var potMax = getNumLogsFromLogIndices(histogramBuckets[i].logIndices);
 					if(potMax > maxNumLogs) {
@@ -1106,15 +1104,21 @@
 					totalLogsInPeriod += potMax;
 				}
 
+				//set up the canvas
 				var canvas = (document.getElementById("bottomCanvas"));
 				canvas.width = canvas.width;
 
 				var context = canvas.getContext("2d");
 				context.fillRect(32, 125, totLength + 20, 3); //should be 1320 long from (42, 175) to (1362, 175)
 
-				if(bucketSelected == -1) context.fillStyle = "#444444";
-				else context.fillStyle = "#666666";
+				if(bucketSelected == -1) {
+					context.fillStyle = "#444444";
+				}
+				else {
+					context.fillStyle = "#666666";
+				}
 
+				//draw the buckets
 				for(var i = 0; i < totNumBuckets; i++){
 					if(bucketSelected == i) {
 						context.fillStyle = "#222222";
@@ -1129,6 +1133,7 @@
 				}
 			}
 			function getNumLogsFromLogIndices(logIndices){
+				//sums all the logs for a given bucket's list of day indices
 				var sum = 0;
 				for(var i = 0; i < logIndices.length; i++){
 					sum += selectedLogsByDay[logIndices[i]].logs.length;
@@ -1136,14 +1141,17 @@
 				return sum;
 			}
 			function drawGraphMouseoverDisplay(graphCanvas, mousePos){
+				//wrapper for the drawGraph function that makes the day you're mousing over bolder
 				graphCanvas.width = graphCanvas.width;
 
+				//calculate the bucket, draw
 				var bucketSelected = -1;
 				if(mousePos.x >= 42 && mousePos.x < 1362 && mousePos.y >= 25 && mousePos.y < 125){
 					bucketSelected = Math.floor(((mousePos.x - 42) / 1320) * histogramBuckets.length);
 				}
-
 				drawGraph(bucketSelected);
+
+				//display the moused-over bucket's info in the message display field
 				if(bucketSelected != -1){
 					var info = dateToShortStr(histogramBuckets[bucketSelected].startDate);
 					if(hoursPerBucket != 24) {
@@ -1152,7 +1160,9 @@
 					info += "  ::  " + getNumLogsFromLogIndices(histogramBuckets[bucketSelected].logIndices) + " logs";
 					setMouseoverMessageDisplay(info);
 				}
-				else setMouseoverMessageDisplay("");
+				else {
+					setMouseoverMessageDisplay("");
+				}
 			}
 			function drawIndividualBucket(context, bucket, height, totNumBuckets, totLength){
 				//(totLength / totNumBuckets) should be an integer. totLength is like 1320, not 1340 - no padding
@@ -1162,6 +1172,7 @@
 
 			//set values in sidebar based on inside changes
 			function setRadiusInTextBox(radius){
+				//if the radius is determined internally, set the value shown in the textbox. -1 for blank
 				if(radius < 0) {
 					document.getElementById("searchRadius").value = "";
 				}
@@ -1171,6 +1182,7 @@
 				}
 			}
 			function setCoordinatesInTextBox(center){
+				//if the coordinates are determined internally, set the value shown in the textbox. null for blank
 				if(center == null) {
 					document.getElementById("searchCoordinates").value = "";
 				}
@@ -1179,6 +1191,7 @@
 				}
 			}
 			function setBucketSizeInTextBox(bucketSize){
+				//if the graph bucket size is determined internally, set the value shown in the textbox. null for blank
 				if(bucketSize == null) {
 					document.getElementById("bucketSize").value = "";
 				}
@@ -1187,9 +1200,11 @@
 				}
 			}
 			function setTotalStatsDisplay(numDays, numLogs){
+				//used to set the first text display, which displays a summary of all the logs loaded at the outset
 				document.getElementById("totalStats").innerHTML = "Loaded a total of " + numLogs + " logs from " + numDays + " days";
 			}
 			function setCurrentlyDisplayingStatisticsDisplay(numDays, numLogsSelected, numLogsDisplaying){ 
+				//used to set the second text display, which displays a summary of all the logs currently being displayed
 				if(numLogsDisplaying == numLogsSelected) {
 					document.getElementById("currentlyDisplayingStats").innerHTML = "Displaying " + numLogsDisplaying + " logs from " + numDays + " days";
 				}
@@ -1198,9 +1213,11 @@
 				}
 			}
 			function setMouseoverMessageDisplay(message){
+				//used to set the third text display, which displays a variety of mouseover messages
 				document.getElementById("mouseoverMessage").innerHTML = message;
 			}
 			function setLatLngDisp(loc){
+				//sets the display at the top of the map with a location. null for blank
 				if(loc == null) {
 					document.getElementById("latLngDisp").innerHTML = "";
 				}
@@ -1209,11 +1226,18 @@
 				}
 			}
 
+
 			//comparisons
 			function areDatesEqual(date1, date2){
+				//compares the dates, but not the times, of two date objects
 				return ((date1.getFullYear() == date2.getFullYear()) && (date1.getMonth() == date2.getMonth()) && (date1.getDate() == date2.getDate()));
 			}
+			function isStartBeforeEnd(potStart, potEnd){
+				//determines whether the supplied start time is before the supplied end time
+				return potStart.getTime() < potEnd.getTime();
+			}
 			function areOverlapping(loc1, loc2){
+				//determines whether two displaying circles overlap (based on displayCircleRadius, obviously)
 				var circleOptions = {
 					center: loc1,
 					radius:	displayCircleRadius * 2
@@ -1223,13 +1247,16 @@
 				return circ.getBounds().contains(loc2);
 			}
 			function doesCircleContain(circle, loc){
+				//determines whether a location is actually inside a circle, not just its bounding box
 				var dist = google.maps.geometry.spherical.computeDistanceBetween(circle.getCenter(), loc);
 				return (dist < circle.getRadius());
 			}
 			function doesRegionContain(region, loc, pointOutside){
+				//determines whether a location is actually inside a region, not just its bounding box. pointOutside can be any point outside the region (preferably close by)
 				var path = region.getPath();
 				var pathLength = path.getLength();
 
+				//calculate the number of times the ray from the outside point to the inside point hits the edges of the region
 				var totalIntersections = 0;
 				for(var i = 0; i < pathLength; i++){
 					if(doLinesIntersect(loc, pointOutside, path.getAt(i), path.getAt((i+1)%pathLength))){
@@ -1237,9 +1264,12 @@
 					}
 				}
 
+				//iff the ray hits an odd number of times, the point is inside
 				return ((totalIntersections % 2) == 1);
 			}
 			function doLinesIntersect(pointToTest, pointOutside, vx1, vx2) {
+				//create cartesian points from the locations
+				//POTENTIAL upgrade this conversion to make sure it actually works
 				var ln1vx1 = {
 					x: pointToTest.lng(),
 					y: pointToTest.lat()
@@ -1260,6 +1290,7 @@
 		    var d1, d2;
 		    var a1, a2, b1, b2, c1, c2;
 
+		    //calculate the coeffecients of ax+by+c=0 for the first ray
 		    a1 = ln1vx2.y - ln1vx1.y;
 		    b1 = ln1vx1.x - ln1vx2.x;
 		    c1 = (ln1vx2.x * ln1vx1.y) - (ln1vx1.x * ln1vx2.y);
@@ -1267,8 +1298,10 @@
 		    d1 = (a1 * ln2vx1.x) + (b1 * ln2vx1.y) + c1;
 		    d2 = (a1 * ln2vx2.x) + (b1 * ln2vx2.y) + c1;
 
+		    //if the two points of the second ray are on the same side of the first line, they don't intersect
 		    if (d1 * d2 > 0) return false;
 
+		    //calculate the coeffecients of ax+by+c=0 for the second ray
 		    a2 = ln2vx2.y - ln2vx1.y;
 		    b2 = ln2vx1.x - ln2vx2.x;
 		    c2 = (ln2vx2.x * ln2vx1.y) - (ln2vx1.x * ln2vx2.y);
@@ -1276,6 +1309,7 @@
 		    d1 = (a2 * ln1vx1.x) + (b2 * ln1vx1.y) + c2;
 		    d2 = (a2 * ln1vx2.x) + (b2 * ln1vx2.y) + c2;
 
+		    //if the two points of the first ray are on the same side of the second line, they don't intersect
 		    if (d1 * d2 > 0) return false;
 
 		    //this is the colinear case, not really likely to be a big deal
@@ -1287,9 +1321,11 @@
 
 			//time conversions
 			function makeCleanDate(year, month, day){
+				//makes a date with just the date values, no time
 				return new Date(year, month, day, 0, 0, 0, 0);
 			}
 			function stringToDate(str){
+				//converts a string to a date. should be formatted "[day of week (irrelevant)] [month (e.g. January)] [day of month (e.g. 1st)], [year (e.g. 2013)]"
 				var parts = str.split(" ");
 
 				var year = parseInt(parts[3]);
@@ -1305,6 +1341,7 @@
 				return makeCleanDate(year, month, date);
 			}
 			function addTimeStrToDate(existingDate, timeStr){
+				//take a date and add the time. time string should be formatted "HH:mm:ss"
 				var segments = timeStr.trim().split(":");
 				existingDate.setHours(parseInt(segments[0]));
 				existingDate.setMinutes(parseInt(segments[1]));
@@ -1312,15 +1349,19 @@
 				return existingDate;
 			}
 			function removeTimeFromDate(existingDate){
-				return new Date(existingDate.getFullYear(), existingDate.getMonth(), existingDate.getDate(), 0, 0, 0, 0);
+				//take the time off of a date 
+				return new makeCleanDate(existingDate.getFullYear(), existingDate.getMonth(), existingDate.getDate());
 			}
 			function getHoursFromTimeStr(timeStr){
+				//extract the hour value from a time string, formatted "HH:mm:ss"
 				return parseInt(timeStr.split(":")[0].trim());
 			}
 			function getMinutesFromTimeStr(timeStr){
+				//extract the minute value from a time string, formatted "HH:mm:ss"
 				return parseInt(timeStr.split(":")[1].trim());
 			}
 			function dateToShortStr(existingDate){
+				//converts a date object to a formatted string "MM-dd-yyyy"
 				var result = "";
 				result += (existingDate.getMonth() + 1) + "-";
 				result += existingDate.getDate() + "-";
@@ -1330,20 +1371,22 @@
 
 			//location conversions
 			function makeBounds(customPolygon){
+				//makes the smallest rectangular bounds around a region
 				if(customPolygon.getPaths().length > 1) {
 					alert("two path polygon!");
 				}
 
 				var path = customPolygon.getPath();
-				var bounds = new google.maps.LatLngBounds(path.getAt(0), path.getAt(1));
+				var bounds = new google.maps.LatLngBounds(path.getAt(0), path.getAt(0));
 
-				for(var i = 2; i < path.getLength(); i++){
+				for(var i = 1; i < path.getLength(); i++){
 					bounds.extend(path.getAt(i));
 				}
 
 				return bounds;
 			}
 			function locationToString(loc){
+				//converts a location to a string, rounding to six figures after the decimal
 				var lat = (Math.floor(loc.lat() * 1000000 + .5) / 1000000) + "";
 				if(lat.indexOf(".") == -1) {
 					lat += ".";
@@ -1359,12 +1402,10 @@
 				return lat + ", " + lng;
 			}
 			function stringToLocation(str){
+				//converts a string to a location. string should be formatted "[lat], [lng]"
 				var coords = str.trim().split(" ");
 				var lat = parseFloat(coords[0]);
 				var lng = parseFloat(coords[1]);
-				return coordsToLocation(lat, lng);
-			}
-			function coordsToLocation(lat, lng){
 				return new google.maps.LatLng(lat, lng);
 			}
 
