@@ -8,8 +8,9 @@
     <style type="text/css">
       html, body, #mapCanvas {
         height: 100%;
-        min-width: 1280px;
+        min-width: 1340px;
     		min-height: 800px;
+    		background: rgba(255,255,255,1);
         margin: 0px;
         padding: 0px;
         font-family: Roboto;
@@ -44,15 +45,24 @@
         outline: none;
         box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
       }
-			
+
+      #hiddenControls {
+      	position: fixed;
+		    left: 0px;
+		    top: 0px;
+		    visibility: hidden;
+		    z-index: 1; 
+      }
+
 			#bottomBar {
 				position: relative;
 				left: 0px;
 				top: -1075px;
 				height: 150px;
 				width: 1410px;
+				opacity: .001;
 				background: rgba(255,255,255,0.55);
-				z-index: 1;
+				z-index: 2;
 				outline: none;
 				box-shadow: 0px -3px 25px 5px rgba(0, 0, 0, 0.2);
 			}
@@ -63,8 +73,9 @@
 				top: -925px;
 				height: 925px;
 				width: 270px;
+				opacity: .001;
 				background: rgba(255,255,255,0.85);
-				z-index: 2;
+				z-index: 3;
 				outline: none;
 				padding: 10;
 				box-shadow: -3px 0px 25px 5px rgba(0, 0, 0, 0.25);
@@ -133,13 +144,12 @@
     	var MONTH_REF_NO_NUMS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 			var STANFORD_LOCATION = new google.maps.LatLng(37.424188, -122.166349);
 
-			var MAX_BUCKETS = 660;
+			var MIN_PX_PER_BUCKET = 2;
 			var MAX_CIRCLES_DISPLAYABLE = 1000;
 
 
-			var windowWidth = window.innerWidth;
-			var windowHeight = window.innerHeight;
-			var bottomBarWidth;
+			var displayWidth;
+			var displayHeight;
 			
 			var map;
 
@@ -173,13 +183,32 @@
 			
 
 			function resize(){
-				windowWidth = window.innerWidth;
-				windowHeight = window.innerHeight;
-				
-				//CURRENT
-				//TODO move sidebar
-				//resize bottom bar, graph
-				//set this method up to be called at start, too
+				var sidebar = document.getElementById("sidebar");
+				var bottomBar = document.getElementById("bottomBar");
+
+				var mapCanvas = map.getDiv();
+				displayWidth = mapCanvas.offsetWidth;
+				displayHeight = mapCanvas.offsetHeight;
+
+				var windowHeight = window.innerHeight;
+				if(displayHeight < windowHeight && windowHeight > 1340){
+					displayHeight = windowHeight;
+				}
+
+				sidebar.style.height = displayHeight + "px";
+				sidebar.style.top = "-" + displayHeight + "px";
+				sidebar.style.left = (displayWidth - 270) + "px";
+
+				bottomBar.style.width = (displayWidth - 270) + "px";
+				bottomBar.style.top = "-" + (displayHeight + 150) + "px";
+
+				initializeBottomBar();
+				var oldHPB = hoursPerBucket;
+				refreshHoursPerBucket();
+				if(oldHPB != hoursPerBucket){
+					refreshGraphBuckets();
+				}
+				drawGraph();
 			}
 			function getMousePos(canvas, event) {
 				//gets the mouse's position
@@ -206,9 +235,7 @@
 				};
 				map = new google.maps.Map(document.getElementById("mapCanvas"), mapOptions);
 
-				//create the search box and link it to the UI element.
-				var input = (document.getElementById("searchBox"));
-				var searchBox = new google.maps.places.SearchBox((input));
+				resize();
 
 				//set up the polyline
 				var polyOptions = {
@@ -218,6 +245,10 @@
 			  };
 			  searchPolyline = new google.maps.Polyline(polyOptions);
 			  searchPolyline.setMap(map);
+
+				//create the search box and link it to the UI element.
+				var input = (document.getElementById("searchBox"));
+				var searchBox = new google.maps.places.SearchBox((input));
 
 				//listen for the event fired when the user selects an item 
 				google.maps.event.addListener(searchBox, "places_changed", function() {
@@ -230,6 +261,12 @@
 				google.maps.event.addListener(map, "bounds_changed", function() {
 					var bounds = map.getBounds();
 					searchBox.setBounds(bounds);
+				});
+
+				//make the site display as soon as the map is actually loaded
+				google.maps.event.addListenerOnce(map, 'idle', function(){
+					document.getElementById("sidebar").style.opacity = 1;
+					document.getElementById("bottomBar").style.opacity = 1;
 				});
 				
 				//add a listener for map clicks to make the search circle
@@ -295,11 +332,8 @@
 			}
 			function initializeBottomBar(){
 				//sets up the bottom bar by setting its size and allowing mouseovers
-				var bottomBarWidth = (1680 - 270);
-				document.getElementById("bottomBar").style.width = bottomBarWidth + "px";
-
 				var graphCanvas = document.getElementById("bottomCanvas");
-				graphCanvas.width = bottomBarWidth - 5;
+				graphCanvas.width = displayWidth - 270 - 5;
 				graphCanvas.height = 145;
 
 				graphCanvas.addEventListener('mousemove', function(event) {
@@ -685,6 +719,7 @@
 					hoursPerBucket = temp * 24;
 				}
 
+				refreshHoursPerBucket();
 				refreshGraphBuckets();
 				drawGraph(-1);
 			}
@@ -696,6 +731,7 @@
 				refreshListOfDisplayingLogs();
 				refreshCirclesToDraw();
 				refreshConnections();
+				refreshHoursPerBucket();
 				refreshGraphBuckets();
 				drawGraph(-1);
 			}
@@ -979,8 +1015,10 @@
 			  	for(var j = 0; j < selectedLogsByDay[i].logs.length - 1; j++){
 			  		var log1 = selectedLogsByDay[i].logs[j];
 			  		var log2 = selectedLogsByDay[i].logs[j+1];
-			  		//TODO make time work?
-				  	if(areOverlapping(log1.location, log2.location)) continue;
+			  		
+			  		//if the two logs are more than six minutes apart, or so close that their circles are on top of each other, don't draw the connection
+						if(calculateTimeDifference(log1.time, log2.time) > 6) continue;
+						if(areOverlapping(log1.location, log2.location)) continue;
 
 					  var nextLine = new google.maps.Polyline(polyOptions);
 					  nextLine.setMap(map);
@@ -995,6 +1033,18 @@
 			}
 
 			//bottom bar graph functions
+			function refreshHoursPerBucket(){
+				//calculate the total number of days, and thus minimum size of a bucket to make the graph look ok
+				var numDays = Math.floor(((removeTimeFromDate(searchEndDate).getTime() - removeTimeFromDate(searchStartDate).getTime()) / (1000 * 60 * 60 * 24)) + .5);
+				var maxBuckets = displayWidth / MIN_PX_PER_BUCKET;
+				var minDaysPerBucket = Math.floor(numDays / maxBuckets) + 1;
+
+ 				if(hoursPerBucket < minDaysPerBucket * 24) 
+				{
+					hoursPerBucket = minDaysPerBucket * 24;
+ 					setBucketSizeInTextBox(minDaysPerBucket + " days");
+ 				}
+			}
 			function refreshGraphBuckets(){
 				//create all the buckets to be drawn in the graph (works with the selected logs, but also adds the days that aren't there and formats for graphing)
 				histogramBuckets = [];
@@ -1002,17 +1052,7 @@
 				var allLogsIndex = 0;
 				var loopStartDate = removeTimeFromDate(searchStartDate);
 
-				//calculate the total number of days, and thus minimum size of a bucket to make the graph look ok
-				var numDays = Math.floor(((removeTimeFromDate(searchEndDate).getTime() - removeTimeFromDate(searchStartDate).getTime()) / (1000 * 60 * 60 * 24)) + .5);
-				var minDaysPerBucket = Math.floor(numDays / MAX_BUCKETS) + 1;
-
- 				if(hoursPerBucket < minDaysPerBucket * 24) 
-				{
-					hoursPerBucket = minDaysPerBucket * 24;
- 					setBucketSizeInTextBox(minDaysPerBucket + " days");
- 				}
-
- 				//bring the index here that we use match buckets to day logs up so that they match at the start
+ 				//bring the index here that we use to match buckets to day logs up so that they match at the start
 				while(allLogsIndex < selectedLogsByDay.length && loopStartDate.getTime() > selectedLogsByDay[allLogsIndex].date.getTime()){
 					allLogsIndex++;
 				}
@@ -1074,7 +1114,7 @@
 			function drawGraph(bucketSelected){
 				//actually draws the graph, based on the updated buckets
 				var totNumBuckets = histogramBuckets.length;
-				var totLength = 1320;
+				var totLength = displayWidth - 270 - 70;
 				var maxHeight = 100;
 
 				var maxNumLogs = 1;
@@ -1095,7 +1135,7 @@
 				canvas.width = canvas.width;
 
 				var context = canvas.getContext("2d");
-				context.fillRect(32, 125, totLength + 20, 3); //should be 1320 long from (42, 175) to (1362, 175)
+				context.fillRect(25, 125, totLength + 20, 3);
 
 				if(bucketSelected == -1) {
 					context.fillStyle = "#444444";
@@ -1130,10 +1170,12 @@
 				//wrapper for the drawGraph function that makes the day you're mousing over bolder
 				graphCanvas.width = graphCanvas.width;
 
+				var totLength = displayWidth - 270 - 70;
+
 				//calculate the bucket, draw
 				var bucketSelected = -1;
-				if(mousePos.x >= 42 && mousePos.x < 1362 && mousePos.y >= 25 && mousePos.y < 125){
-					bucketSelected = Math.floor(((mousePos.x - 42) / 1320) * histogramBuckets.length);
+				if(mousePos.x >= 25 && mousePos.x < totLength + 35 && mousePos.y >= 25 && mousePos.y < 125){
+					bucketSelected = Math.floor(((mousePos.x - 35) / totLength) * histogramBuckets.length);
 				}
 				drawGraph(bucketSelected);
 
@@ -1152,7 +1194,7 @@
 			}
 			function drawIndividualBucket(context, bucket, height, totNumBuckets, totLength){
 				//(totLength / totNumBuckets) should be an integer. totLength is like 1320, not 1340 - no padding
-				context.fillRect(42 + (totLength / totNumBuckets) * bucket, 125 - height, (totLength / totNumBuckets) + 1, height);
+				context.fillRect(35 + (totLength / totNumBuckets) * bucket, 125 - height, (totLength / totNumBuckets) + 1, height);
 			}
 
 
@@ -1214,6 +1256,7 @@
 
 
 			//comparisons
+			//time
 			function areDatesEqual(date1, date2){
 				//compares the dates, but not the times, of two date objects
 				return ((date1.getFullYear() == date2.getFullYear()) && (date1.getMonth() == date2.getMonth()) && (date1.getDate() == date2.getDate()));
@@ -1222,6 +1265,15 @@
 				//determines whether the supplied start time is before the supplied end time
 				return potStart.getTime() < potEnd.getTime();
 			}
+			function calculateTimeDifference(timeStr1, timeStr2){
+				//ignores the seconds of the two strings, calculates t2 - t1 in minutes. format "HH:mm:ss"
+				var segments1 = timeStr1.trim().split(":");
+				var segments2 = timeStr2.trim().split(":");
+
+				return (parseInt(segments2[0]) - parseInt(segments1[0])) * 60 + (parseInt(segments2[1]) - parseInt(segments1[1]));
+			}
+
+			//location
 			function areOverlapping(loc1, loc2){
 				//determines whether two displaying circles overlap (based on displayCircleRadius, obviously)
 				var circleOptions = {
@@ -1230,7 +1282,7 @@
 				};
 
 				var circ = new google.maps.Circle(circleOptions);
-				return circ.getBounds().contains(loc2);
+				return doesCircleContain(circ, loc2);
 			}
 			function doesCircleContain(circle, loc){
 				//determines whether a location is actually inside a circle, not just its bounding box
@@ -1450,7 +1502,7 @@
 					<p id="currentlyDisplayingStats"><p>
 					<p id="mouseoverMessage"><p>
 				</div>
-				<div>
+				<div id="hiddenControls">
 				  <button type="button" id="closeButton">Close Street View</button>
     			<p id="latLngDisp"><p>
     		</div>
